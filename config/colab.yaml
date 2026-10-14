@@ -1,14 +1,16 @@
-# Profile colab-native: Google Colab high-RAM CPU VM (~32 GiB, 2 vCPU, runs as root, no Docker).
+# Profile colab-native: Google Colab high-RAM CPU VM (~51 GiB, 2 vCPU, runs as root, no Docker).
 # Steady-state JVM budget while the demo is up (one local Spark driver, no separate executor):
-#   Kafka 1g + Cassandra heap 4G + Cassandra direct 2G + Spark 6g ≈ 13 GiB.
-#   About half the machine stays for the OS, the notebook kernel, FastAPI, and Streamlit.
-# Pytest's own Spark session is 4g and runs beside Kafka and Cassandra, not beside this driver.
+#   Kafka 1g + Cassandra heap 4G + Cassandra direct 2G + Spark 16g ≈ 23 GiB.
+#   The rest stays for the OS, the notebook kernel, FastAPI, and Streamlit.
+# Pytest's own Spark session is also 16g and runs beside Kafka and Cassandra, not beside this driver.
 profile: colab-native
 paths:
   workdir: /content/transitpulse-runtime
 spark:
-  driver_memory: 6g
+  driver_memory: 16g
   shuffle_partitions: 2
+api:
+  max_fanout_routes: 10          # dashboard may read /vehicles and /alerts across the whole 10-route scope
 runtime:
   allow_root_in_demo_vm: true          # cassandra -R is used only when uid/gid == 0 and this is true
   kafka_heap: 1g

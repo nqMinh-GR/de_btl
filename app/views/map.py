@@ -7,6 +7,8 @@ ScatterplotLayers. Renderer ``svg``: a self-contained SVG schematic with no Java
 
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 
 import state
@@ -60,6 +62,13 @@ def render() -> None:
         for res, what in ((geo, "shape tuyến"), (stops, "danh sách trạm"), (veh, "vị trí xe")):
             if not res.usable or res.kind in ("empty", "stale"):
                 states.render(res, what)
+        period = state.get_settings().refresh_seconds
+        stamp = time.strftime("%H:%M:%S")
+        sig = tuple(
+            (v.get("vehicle_id"), v.get("latitude"), v.get("longitude"), v.get("observation_time"))
+            for v in vehicles
+        )
+        st.caption(f"Vị trí xe làm mới mỗi {period:g} giây · lần vẽ {stamp}")
         if renderer == "svg":
             svg = map_layers.render_svg(shapes, stop_rows, vehicles, synthetic=synthetic)
             if svg:
@@ -67,7 +76,11 @@ def render() -> None:
             else:
                 st.info("Không có tọa độ hợp lệ để vẽ (chưa có shape/trạm/xe).")
         else:
-            st.pydeck_chart(map_layers.build_deck(shapes, stop_rows, vehicles, synthetic=synthetic))
+            # A new key when positions change forces PyDeck to draw the new coordinates.
+            st.pydeck_chart(
+                map_layers.build_deck(shapes, stop_rows, vehicles, synthetic=synthetic),
+                key="tp-live-map-%s-%s" % (route_id, hash(sig)),
+            )
         html_block(f"<span style='font-size:0.85rem'>{esc(map_layers.MAP_LABEL)} · {legend_freshness()} · "
                    "trạm: chấm trắng · rê chuột để xem ID, thời điểm quan sát, tuổi và chất lượng.</span>")
         if not veh.usable:

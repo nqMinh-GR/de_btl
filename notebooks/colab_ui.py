@@ -2135,6 +2135,8 @@ class TransitPulseUI(object):
         self._busy = False
         self._suspend = False
         self._timer: Any = None
+        self._map_timer: Any = None
+        self._map_live = False
         self._auto_remaining = 0
         self._auto_seconds = self.refresh_seconds
         self._observers: List[Tuple[Any, Callable]] = []
@@ -2391,6 +2393,35 @@ class TransitPulseUI(object):
         finally:
             self._busy = False
 
+    def refresh_map(self) -> None:
+        """Re-query vehicle positions and redraw only the map tab."""
+        if self._closed or self._busy or not self.run_id or not self.route_id or len(self._panels) < 2:
+            return
+        self._busy = True
+        try:
+            veh = self.client.get(
+                "/vehicles", {"run_id": self.run_id, "route_id": self.route_id},
+                primary_feed="vehicle_positions", list_key="vehicles",
+            )
+            self.last_results["vehicles"] = veh
+            route_label, _stop_label = self._labels()
+            fragment = render_map_panel(
+                self.last_results.get("geometry"),
+                self.last_results.get("stops") or self._stops_res,
+                veh, route_label=route_label, base_url=self.client.base_url,
+            )
+            panel = self._panels[1]
+            if panel.value != fragment:
+                panel.value = fragment
+            self._set_status(
+                '<span class="tp-muted">Bản đồ cập nhật lúc %s · mỗi %d giây cho đến khi đóng UI</span>'
+                % (fmt_ts(iso_utc(utcnow())), int(self.refresh_seconds))
+            )
+        except Exception as exc:  # noqa: BLE001 - a map tick must not kill the kernel callback loop
+            self._set_status(_note("err", "Lỗi khi cập nhật bản đồ", esc("%s: %s" % (type(exc).__name__, exc))))
+        finally:
+            self._busy = False
+
     # ------------------------------------------------------------------ callbacks
     def _on_run_change(self, change: Any) -> None:
         if self._suspend or self._closed:
@@ -2484,6 +2515,47 @@ class TransitPulseUI(object):
             if not self._closed:
                 self._set_status('<span class="tp-muted">Đã hết số lần tự làm mới; bấm Làm mới hoặc bật lại.</span>')
 
+    def start_map_live(self) -> None:
+        """Keep redrawing the map tab until the UI is closed. Does not block the cell."""
+        if self._closed or not self._panels:
+            return
+        self.stop_map_live()
+        self._map_live = True
+        self._schedule_map()
+
+    def _schedule_map(self) -> None:
+        loop = _kernel_loop()
+        if loop is not None:
+            self._map_timer = loop.call_later(self.refresh_seconds, self._map_tick)
+        else:
+            timer = threading.Timer(self.refresh_seconds, self._map_tick)
+            timer.daemon = True
+            timer.start()
+            self._map_timer = timer
+
+    def _map_tick(self) -> None:
+        if self._closed or not self._map_live:
+            self._map_timer = None
+            return
+        try:
+            self.refresh_map()
+        except Exception:  # noqa: BLE001
+            pass
+        if not self._closed and self._map_live:
+            self._schedule_map()
+        else:
+            self._map_timer = None
+
+    def stop_map_live(self) -> None:
+        self._map_live = False
+        timer = self._map_timer
+        self._map_timer = None
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:  # noqa: BLE001
+                pass
+
     def stop_auto_refresh(self) -> None:
         timer = self._timer
         self._timer = None
@@ -2512,6 +2584,7 @@ class TransitPulseUI(object):
         _enable_colab_widgets()
         display(self._build())
         self.refresh(reload_lists=True)
+        self.start_map_live()
         if auto_refresh:
             self.start_auto_refresh()
         return self
@@ -2520,6 +2593,7 @@ class TransitPulseUI(object):
         if self._closed:
             return
         self._closed = True
+        self.stop_map_live()
         self.stop_auto_refresh()
         for widget, handler in self._observers:
             try:

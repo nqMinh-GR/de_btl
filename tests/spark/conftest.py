@@ -60,10 +60,11 @@ def spark():
     pytest.importorskip("pyspark")
     from pyspark.sql import SparkSession
 
-    # One session serves every Spark test. Colab is ~32 GiB and already runs Kafka (1g) plus
-    # Cassandra (4G heap + 2G direct) when this session starts, so the driver is 4g — under the
-    # 6g demo driver, with room left for the notebook. ExitOnOutOfMemoryError makes a full heap
-    # fail the test instead of retrying page allocation until the cell timeout.
+    # One session serves every Spark test. The Colab VM is ~51 GiB and already runs Kafka (1g)
+    # plus Cassandra (4G heap + 2G direct). Whole-stage codegen of the prediction plan needs a
+    # large compiler heap (4g died on IT07 with a ~1.2 MiB task binary), so the driver is 16g.
+    # ExitOnOutOfMemoryError makes a full heap fail the test instead of retrying page allocation
+    # until the cell timeout.
     session = (
         SparkSession.builder.master("local[1]")
         .appName("transitpulse-tests")
@@ -74,8 +75,8 @@ def spark():
         .config("spark.ui.showConsoleProgress", "false")
         .config("spark.driver.host", "127.0.0.1")
         .config("spark.driver.bindAddress", "127.0.0.1")
-        .config("spark.driver.memory", "4g")
-        .config("spark.driver.maxResultSize", "1g")
+        .config("spark.driver.memory", "16g")
+        .config("spark.driver.maxResultSize", "4g")
         .config("spark.python.worker.reuse", "true")
         .config("spark.driver.extraJavaOptions", "-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError")
         .config("spark.executor.extraJavaOptions", "-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError")
