@@ -182,6 +182,9 @@ def test_expected_json_time_vectors(golden_dir) -> None:
         got = scheduled_utc(d, exp["seconds"], tz)
         assert got == _utc(exp["scheduled_utc"]), vec
         local, exp_local = got.astimezone(ZoneInfo(tz)), datetime.fromisoformat(exp["local_time"])
-        assert local == exp_local and local.utcoffset() == exp_local.utcoffset(), vec
+        # PEP 495: == across different tzinfo is always False when utcoffset() depends on
+        # fold (the repeated hour on a fall-back day), even when both instants match.
+        assert local.replace(tzinfo=None) == exp_local.replace(tzinfo=None), vec
+        assert local.utcoffset() == exp_local.utcoffset(), vec
         midnight = datetime(d.year, d.month, d.day, tzinfo=ZoneInfo(tz)).astimezone(UTC)
         assert midnight + timedelta(seconds=exp["seconds"]) == _utc(exp["wrong_local_midnight_utc"]), vec

@@ -470,7 +470,7 @@ def _build_and_publish(
         fsync_dir(version_dir)
         published = True
         log_event(_log, "static_load", "ok", "static scope published", scope_id=sid, gtfs_version=gtfs_version,
-                  status=status, row_counts=row_counts, scope_dir=str(scope_dir))
+                  validation_status=status, row_counts=row_counts, scope_dir=str(scope_dir))
         return StaticLoadResult(gtfs_version, sid, status, b.agency_timezone, b.verified_route_ids, b.rejected,
                                 scope_dir, scope_dir / REPORT_FILE, row_counts=row_counts,
                                 cassandra=report["cassandra"], static_zip_path=version.zip_path)

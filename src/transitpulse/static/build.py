@@ -670,8 +670,8 @@ def build_static(
     )
 
     status = status_from_checks(checks)
-    log_event(_log, "static_validate", "ok", "static validation finished", status=status,
-              verified_route_ids=verified, check_count=len(checks))
+    log_event(_log, "static_validate", "ok", "static validation finished",
+              validation_status=status, verified_route_ids=verified, check_count=len(checks))
     return StaticBuild(status, checks, agency_timezone, requested, tuple(verified), tuple(rejected), file_stats,
                        route_info, feed_info, dims, catalog_stop_times)
 
