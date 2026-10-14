@@ -9,6 +9,9 @@ paths:
 spark:
   driver_memory: 16g
   shuffle_partitions: 2
+  # 2 vCPU: compiling the prediction plan (whole-stage codegen) takes minutes per micro-batch
+  # and the 5-step golden smoke then exceeds its 900s budget. Extra heap does not shorten that compile.
+  whole_stage_codegen: false
 api:
   max_fanout_routes: 10          # dashboard may read /vehicles and /alerts across the whole 10-route scope
 runtime:

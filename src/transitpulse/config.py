@@ -153,6 +153,7 @@ class SparkSection(_Model):
     query_name: str
     connector_coordinate: str
     ui_enabled: bool
+    whole_stage_codegen: bool = True
 
 
 class CassandraSection(_Model):

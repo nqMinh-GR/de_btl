@@ -407,6 +407,9 @@ def test_session_conf(tmp_path):
     assert conf["spark.driver.host"] == "127.0.0.1"
     assert conf["spark.ui.enabled"] == "false"
     assert conf["spark.sql.shuffle.partitions"] == str(cfg.spark.shuffle_partitions)
+    assert conf["spark.sql.codegen.wholeStage"] == "true"
+    colab = session_conf(load_config("colab-native", workdir=tmp_path, environ={}), None)
+    assert colab["spark.sql.codegen.wholeStage"] == "false"
     assert conf["spark.local.dir"].startswith(str(tmp_path.resolve()))
     assert "spark.jars" not in conf
     jar = tmp_path / "spark-sql-kafka.jar"

@@ -95,25 +95,29 @@ def _read_pointer_ids(cfg: Any, run_id: str) -> dict[str, str | None]:
 
 
 def wait_processed(ctx: Ctx, run_id: str, *, timeout: float) -> bool:
-    """Barrier: the processor's last progress covers every Kafka high watermark (all published data processed).
+    """Barrier: the processor has consumed every offset that existed when the wait started.
 
-    Only the topics the streaming query consumes (snapshots + control) are compared; the DLQ is written by
-    the pipeline and never read by it.
+    The watermark is read once. The publisher keeps writing control heartbeats while it sits at a
+    barrier, so re-reading the high watermark each poll makes the target move forever and every golden
+    step burns the whole step timeout. Only the topics the streaming query consumes (snapshots + control)
+    are compared; the DLQ is written by the pipeline and never read by it.
     """
     from transitpulse.contracts.topics import CONTROL, SNAPSHOT_TOPICS
     from transitpulse.runtime.kafka_native import end_offsets
 
     topics = {*SNAPSHOT_TOPICS, CONTROL}
     t0 = time.monotonic()
+    target: dict[str, dict[int, int]] | None = None
     while time.monotonic() - t0 < timeout:
-        try:
-            end = end_offsets(ctx.cfg.kafka.bootstrap_servers, sorted(topics))
-        except Exception as exc:  # noqa: BLE001
-            log.debug("end offsets unavailable: %s", exc)
-            end = None
+        if target is None:
+            try:
+                target = end_offsets(ctx.cfg.kafka.bootstrap_servers, sorted(topics))
+            except Exception as exc:  # noqa: BLE001
+                log.debug("end offsets unavailable: %s", exc)
+                target = None
         progress = last_query_progress(ctx.paths, run_id)
-        if end is not None and progress is not None:
-            if offsets_caught_up(extract_end_offsets(progress, topics), end):
+        if target is not None and progress is not None:
+            if offsets_caught_up(extract_end_offsets(progress, topics), target):
                 return True
         time.sleep(2.0)
     return False
@@ -261,6 +265,7 @@ def _run_step(ctx: Ctx, sup: Any, run_id: str, session_id: str, step: dict[str, 
     order = [str(s.get("step")) for s in steps]
     session_dir = ctx.paths.session_dir(session_id)
     t0 = time.monotonic()
+    log.info("golden step %s: waiting for the publisher barrier", name)
     reached = False
     while time.monotonic() - t0 < STEP_TIMEOUT:
         st = read_publisher_state(session_dir) or {}
@@ -297,6 +302,7 @@ def _run_step(ctx: Ctx, sup: Any, run_id: str, session_id: str, step: dict[str, 
     if not reached:
         raise CliError("STEP_TIMEOUT", f"publisher did not reach barrier {name} within {int(STEP_TIMEOUT)} s",
                        log_excerpt=sup.log_tail("publisher"), exit_code=EXIT_READINESS)
+    log.info("golden step %s: barrier reached after %.0fs; waiting for Spark", name, time.monotonic() - t0)
     if not sup.is_alive("processor"):
         raise CliError("PROCESSOR_EXITED", f"processor exited during step {name}",
                        log_excerpt=sup.log_tail("processor"), exit_code=EXIT_READINESS)
@@ -324,9 +330,13 @@ def _run_step(ctx: Ctx, sup: Any, run_id: str, session_id: str, step: dict[str, 
         if result.get("passed"):
             break
         time.sleep(3.0 * (attempt + 1))
-    return {"step": name, "clock": step.get("clock"), "inputs": step.get("inputs"), "passed": bool(result.get("passed")),
+    seconds = round(time.monotonic() - t0, 1)
+    passed = bool(result.get("passed"))
+    log.info("golden step %s: %s in %.0fs (processor caught up=%s)", name, "PASS" if passed else "FAIL",
+             seconds, processed)
+    return {"step": name, "clock": step.get("clock"), "inputs": step.get("inputs"), "passed": passed,
             "checks": result.get("checks", []), "processed_barrier": processed, "pointers": pointers,
-            "pointer_wait_ok": pointer_ok, "seconds": round(time.monotonic() - t0, 1), "checked_at": iso_now()}
+            "pointer_wait_ok": pointer_ok, "seconds": seconds, "checked_at": iso_now()}
 
 
 def golden_report_summary(paths: Any) -> dict[str, Any] | None:

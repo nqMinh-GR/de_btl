@@ -49,6 +49,7 @@ def session_conf(
         "spark.driver.memory": cfg.spark.driver_memory,
         "spark.python.worker.reuse": "true",
         "spark.sql.ansi.enabled": "false",          # parse.py relies on NULL (not errors) for bad casts
+        "spark.sql.codegen.wholeStage": "true" if cfg.spark.whole_stage_codegen else "false",
         "spark.driver.extraJavaOptions": "-Duser.timezone=UTC",
         "spark.executor.extraJavaOptions": "-Duser.timezone=UTC",
         "spark.sql.streaming.metricsEnabled": "false",

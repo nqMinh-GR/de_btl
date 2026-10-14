@@ -83,6 +83,7 @@ spark:
   query_name: realtime_main
   connector_coordinate: "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7"
   ui_enabled: false
+  whole_stage_codegen: true
 
 cassandra:
   hosts: ["127.0.0.1"]
