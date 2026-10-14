@@ -242,7 +242,7 @@ def trace(cfg: ProjectConfig | None = None, paths: WorkPaths | None = None, run_
         return {"ok": False, "consistent": False, "run_id": run_id, "feed": feed, "snapshot_id": snapshot_id,
                 "stages": stages}
     stages.append(_stage("manifest", OK if man.get("status") == "READY" else MISMATCH,
-                         status=man.get("status"), publish_outcome=man.get("publish_outcome"),
+                         manifest_status=man.get("status"), publish_outcome=man.get("publish_outcome"),
                          capture_id=man.get("capture_id"), raw_path=man.get("raw_path"),
                          kafka_topic=man.get("kafka_topic"), kafka_partition=man.get("kafka_partition"),
                          kafka_offset=man.get("kafka_offset"), first_batch_id=man.get("first_batch_id"),
