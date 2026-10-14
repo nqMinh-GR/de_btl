@@ -68,8 +68,8 @@ connector JARs); bootstrap mất khoảng 10–15 phút, các lần chạy lại
 
 Với `ENABLE_CLOUDFLARE_TUNNEL = True` (mặc định), sau khi session sẵn sàng, notebook chạy
 `demo.py expose start --target react` (`TUNNEL_TARGET = "react"`). Lệnh này làm ba việc:
-1. Phục vụ bản build React bằng `vite preview` ở `127.0.0.1:3000`. Trang gọi `/api/v1` trên cùng origin;
-   Vite chuyển tiếp tới FastAPI ở `127.0.0.1:8000`.
+1. Phục vụ bản build React bằng `python -m transitpulse.runtime.react_preview` ở `127.0.0.1:3000`.
+   Trang gọi `/api/v1` trên cùng origin; server chuyển tiếp tới FastAPI ở `127.0.0.1:8000`.
 2. Khởi động `cloudflared tunnel --url http://127.0.0.1:3000`, tạo một quick tunnel và đọc URL công khai
    `https://<ngẫu-nhiên>.trycloudflare.com` từ log.
 3. In link để bấm. URL được lưu ở `TP_WORKDIR/runtime/public_urls.json`.

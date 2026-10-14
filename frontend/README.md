@@ -22,4 +22,4 @@ MapLibre GL vẽ nền đường phố tối CARTO Dark (dữ liệu OpenStreetM
 
 ## Colab
 
-Bootstrap cài Node đã ghim, chạy `npm ci` và `npm run build` với `VITE_API_BASE=/api/v1`. Notebook mặc định `TUNNEL_TARGET = "react"`: `vite preview` ở cổng 3000 và Cloudflare quick tunnel. Mở link `https://….trycloudflare.com`. Link công khai, không đăng nhập; API không được đưa ra URL riêng vì trang gọi `/api/v1` qua proxy cùng origin. Tile bản đồ do trình duyệt khách tải từ CARTO/OSM.
+Bootstrap cài Node đã ghim, chạy `npm ci` và `npm run build` với `VITE_API_BASE=/api/v1`. Notebook mặc định `TUNNEL_TARGET = "react"`: `transitpulse.runtime.react_preview` phục vụ `dist/` ở cổng 3000 (và chuyển `/api` sang FastAPI) rồi mở Cloudflare quick tunnel. Mở link `https://….trycloudflare.com`. Link công khai, không đăng nhập; API không được đưa ra URL riêng vì trang gọi `/api/v1` qua proxy cùng origin. Tile bản đồ do trình duyệt khách tải từ CARTO/OSM.

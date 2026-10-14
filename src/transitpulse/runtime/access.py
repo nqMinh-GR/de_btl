@@ -5,9 +5,10 @@
 * ``dashboard``: ``streamlit run app/streamlit_app.py`` bound to 127.0.0.1:8501 (cwd ``app/`` so its
   ``.streamlit/config.toml`` applies; every relevant setting is also passed explicitly). Readiness:
   ``GET http://127.0.0.1:8501/_stcore/health`` returns ``ok``.
-* ``react``: ``vite preview`` of ``frontend/dist`` on 127.0.0.1:3000. The preview server proxies ``/api`` to
-  the local FastAPI process, so one public origin serves the console and the read-only API. Readiness:
-  ``GET http://127.0.0.1:3000/`` returns 200.
+* ``react``: a stdlib preview of ``frontend/dist`` on 127.0.0.1:3000 (``transitpulse.runtime.react_preview``).
+  It proxies ``/api`` to the local FastAPI process, so one public origin serves the console and the
+  read-only API. Readiness: ``GET http://127.0.0.1:3000/`` returns 200. Vite preview is not used: on the
+  Colab VM it stays up without ever accepting a connection.
 * ``tunnel`` / ``tunnel-api`` / ``tunnel-react``: ``cloudflared tunnel --no-autoupdate --url`` the matching
   local origin. cloudflared logs to stderr (captured in ``W/logs/<component>/stdout.log``); readiness = a
   ``https://<words>.trycloudflare.com`` URL appears in THIS incarnation's part of the log (byte offset recorded
@@ -27,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import re
 import time
 import urllib.error
@@ -165,38 +165,36 @@ def react_local_url() -> str:
     return f"http://{REACT_HOST}:{REACT_PORT}"
 
 
-def _frontend_paths(ctx: Ctx) -> tuple[dict[str, Any], Path]:
+def _frontend_dist(ctx: Ctx) -> Path:
     runtime = ctx.require_runtime()
     frontend = runtime.raw.get("frontend") if isinstance(runtime.raw.get("frontend"), dict) else None
-    node = Path(str((frontend or {}).get("node") or ""))
-    if frontend is None or not node.is_file():
-        raise CliError("FRONTEND_NODE_MISSING", "Node.js for the React console is not installed",
-                       hint=f"re-run `bash scripts/bootstrap_colab.sh --workdir {ctx.paths.root}` (step B6N)",
-                       exit_code=EXIT_UNSUPPORTED)
-    if not frontend.get("built"):
+    dist = ctx.repo_dir / "frontend" / "dist"
+    if frontend is None or not frontend.get("built") or not (dist / "index.html").is_file():
         raise CliError("FRONTEND_NOT_BUILT", "frontend/dist is missing or the Vite build failed",
                        hint="re-run bootstrap so step B6F can run npm ci && npm run build",
                        exit_code=EXIT_UNSUPPORTED)
-    vite = ctx.repo_dir / "frontend" / "node_modules" / "vite" / "bin" / "vite.js"
-    if not vite.is_file():
-        raise CliError("FRONTEND_NOT_BUILT", f"{vite} not found",
-                       hint="re-run bootstrap step B6F", exit_code=EXIT_UNSUPPORTED)
-    return frontend, vite
+    return dist
+
+
+def _api_origin(ctx: Ctx) -> str:
+    host = ctx.cfg.api.host
+    if host in ("0.0.0.0", "::", ""):
+        host = "127.0.0.1"
+    return f"http://{host}:{ctx.cfg.api.port}"
 
 
 def react_argv(ctx: Ctx) -> list[str]:
-    frontend, vite = _frontend_paths(ctx)
-    return [str(frontend["node"]), str(vite), "preview", "--host", REACT_HOST, "--port", str(REACT_PORT),
-            "--strictPort"]
+    dist = _frontend_dist(ctx)
+    return [ctx.python, "-m", "transitpulse.runtime.react_preview",
+            "--dist", str(dist), "--host", REACT_HOST, "--port", str(REACT_PORT),
+            "--api", _api_origin(ctx)]
 
 
 def ensure_react(ctx: Ctx, sup: Supervisor, *, ready_timeout: float) -> dict[str, Any]:
     from transitpulse.runtime.cli_demo import core_env
 
-    frontend, _vite = _frontend_paths(ctx)
-    node_bin = str(Path(frontend["node"]).parent)
-    env = {**core_env(ctx), "PATH": f"{node_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
-           "VITE_API_BASE": "/api/v1"}
+    _frontend_dist(ctx)
+    env = core_env(ctx)
 
     def ready() -> bool:
         status, _body = http_get(react_local_url() + "/", timeout=3.0)
@@ -206,9 +204,9 @@ def ensure_react(ctx: Ctx, sup: Supervisor, *, ready_timeout: float) -> dict[str
     if alive and sup.is_alive("react") and ready():
         return react_view(sup, alive, reused=True)
     entry = sup.start("react", react_argv(ctx), env=env, scope="access", ports=(REACT_PORT,), ready=ready,
-                      ready_timeout=ready_timeout, fingerprint_extra=f"node={frontend.get('version')}",
+                      ready_timeout=ready_timeout, fingerprint_extra="preview=stdlib",
                       min_mem_available_bytes=spawn_gate_bytes("react"), graceful_timeout=10.0,
-                      cwd=ctx.repo_dir / "frontend")
+                      cwd=ctx.repo_dir)
     return react_view(sup, entry, reused=entry.get("reused"))
 
 
