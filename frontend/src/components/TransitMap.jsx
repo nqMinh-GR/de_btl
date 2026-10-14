@@ -7,7 +7,7 @@ const STYLE = {
   sources: {
     carto: {
       type: "raster",
-      tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"],
+      tiles: ["https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png?key=cb1_4kcj_1_0b72a5269b143db42fc94b0e"],
       tileSize: 256,
       attribution: "&copy; OpenStreetMap &copy; CARTO",
     },

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import errno
+import hashlib
 import fcntl
 import importlib
 import logging
@@ -388,18 +389,33 @@ def step_node(entry: dict, paths: WorkPaths, args: argparse.Namespace, report: R
     return {"node": str(node), "npm": str(npm), "version": entry["version"], "home": str(res.home)}
 
 
+def _frontend_source_sha(frontend: Path) -> str:
+    """Hash of ``frontend/src`` so a tile-URL or UI change rebuilds dist, not only a lockfile change."""
+    digest = hashlib.sha256()
+    root = frontend / "src"
+    if root.is_dir():
+        for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            digest.update(path.relative_to(frontend).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def step_frontend(repo_dir: Path, paths: WorkPaths, node_info: dict, args: argparse.Namespace, report: Report) -> dict:
-    """``npm ci`` and ``vite build`` with a relative API base. Skips when dist still matches the lockfile."""
+    """``npm ci`` and ``vite build`` with a relative API base. Skips when dist still matches the lockfile and sources."""
     frontend = repo_dir / "frontend"
     lock = frontend / "package-lock.json"
     if not lock.is_file():
         raise StepFailed("FRONTEND_MISSING", f"{lock} not found", exit_code=EXIT_ARTIFACT)
     lock_sha = sha256_file(lock)
+    source_sha = _frontend_source_sha(frontend)
     dist = frontend / "dist"
     index = dist / "index.html"
     stamp_path = dist / ".tp-build.json"
     previous = read_json_or_none(stamp_path)
     if (index.is_file() and isinstance(previous, dict) and previous.get("lock_sha256") == lock_sha
+            and previous.get("source_sha256") == source_sha
             and previous.get("vite_api_base") == "/api/v1"):
         return {"status": "REUSED", "dist": str(dist), "lock_sha256": lock_sha}
     if args.offline:
@@ -424,7 +440,8 @@ def step_frontend(repo_dir: Path, paths: WorkPaths, node_info: dict, args: argpa
     if built.returncode != 0 or not index.is_file():
         tail = ((built.stderr or "") + (built.stdout or ""))[-800:]
         raise StepFailed("FRONTEND_BUILD_FAILED", f"vite build failed: {tail}", exit_code=EXIT_ARTIFACT)
-    atomic_write_json(stamp_path, {"lock_sha256": lock_sha, "vite_api_base": "/api/v1", "built_at": iso_now()})
+    atomic_write_json(stamp_path, {"lock_sha256": lock_sha, "source_sha256": source_sha,
+                                   "vite_api_base": "/api/v1", "built_at": iso_now()})
     return {"status": "BUILT", "dist": str(dist), "lock_sha256": lock_sha}
 
 
