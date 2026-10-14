@@ -1,0 +1,30 @@
+# TransitPulse overrides merged (top-level replace) into the pinned Cassandra 5.0.9 distribution
+# cassandra.yaml by scripts/prepare_runtime.py -> W/conf/cassandra/cassandra.yaml.
+# Heap / direct memory are set through environment variables (MAX_HEAP_SIZE, MAX_DIRECT_MEMORY_SIZE);
+# HEAP_NEWSIZE stays unset because the JDK 17 options file enables G1.
+# Every path lives under the work directory; nothing is written to /var/lib/cassandra.
+cluster_name: TransitPulseColab
+data_file_directories:
+  - "{{CASSANDRA_ROOT}}/data"
+commitlog_directory: "{{CASSANDRA_ROOT}}/commitlog"
+saved_caches_directory: "{{CASSANDRA_ROOT}}/saved_caches"
+hints_directory: "{{CASSANDRA_ROOT}}/hints"
+cdc_raw_directory: "{{CASSANDRA_ROOT}}/cdc_raw"
+listen_address: 127.0.0.1
+rpc_address: 127.0.0.1
+seed_provider:
+  - class_name: org.apache.cassandra.locator.SimpleSeedProvider
+    parameters:
+      - seeds: "127.0.0.1:7000"
+storage_port: 7000
+native_transport_port: 9042
+start_native_transport: true
+endpoint_snitch: SimpleSnitch
+memtable_heap_space: 256MiB
+memtable_offheap_space: 128MiB
+key_cache_size: 32MiB
+file_cache_size: 128MiB
+concurrent_reads: 8
+concurrent_writes: 16
+concurrent_compactors: 1
+commitlog_total_space: 512MiB

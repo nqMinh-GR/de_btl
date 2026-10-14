@@ -1,0 +1,4 @@
+route_id,agency_id,route_short_name,route_long_name,route_type,route_color,route_text_color
+R_A,SYN,A,Synthetic A,3,1F77B4,FFFFFF
+R_B,SYN,B,Synthetic B,3,FF7F0E,000000
+R_X,SYN,X,Synthetic rail,2,7F7F7F,FFFFFF

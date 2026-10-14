@@ -1,0 +1,97 @@
+# Integration (manual): the native runner on a GitHub Ubuntu VM — real Kafka 4.2.2, Cassandra 5.0.9 and Spark 3.5.7
+# started by the supervisor, then IT01-IT16 (tests/integration). Results are reported separately from CI and from
+# Colab: this runner is NOT managed Colab. The report (test_report.json) lists every case as PASS/FAIL/NOT_RUN.
+name: integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      pytest_args:
+        description: "extra pytest arguments (e.g. -k IT01)"
+        required: false
+        default: ""
+      golden_smoke:
+        description: "also run scripts/demo.py golden-smoke"
+        type: boolean
+        required: false
+        default: true
+
+defaults:
+  run:
+    shell: bash   # bash --noprofile --norc -eo pipefail
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-stack:
+    name: native stack + IT01-IT16
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Work directory and machine facts
+        run: |
+          echo "TP_WORKDIR=$RUNNER_TEMP/tp-work" >> "$GITHUB_ENV"
+          echo "TP_PROFILE=local-native" >> "$GITHUB_ENV"
+          nproc
+          free -g
+          df -h "$RUNNER_TEMP"
+
+      - name: Bootstrap the native runtime (uv, Python 3.11.17, JDK 17, Kafka, Cassandra, Spark connector)
+        run: bash scripts/bootstrap_colab.sh --workdir "$TP_WORKDIR" --repo-dir "$GITHUB_WORKSPACE" --profile local-native
+
+      - name: Doctor
+        run: .venv/bin/python scripts/doctor.py --profile local-native --workdir "$TP_WORKDIR"
+
+      - name: Start infrastructure
+        run: .venv/bin/python scripts/infra.py start --profile local-native --workdir "$TP_WORKDIR"
+
+      - name: Initialise topics and migrations
+        run: .venv/bin/python scripts/infra.py init --profile local-native --workdir "$TP_WORKDIR"
+
+      - name: Golden smoke
+        if: inputs.golden_smoke
+        run: .venv/bin/python scripts/demo.py golden-smoke --profile local-native --workdir "$TP_WORKDIR"
+
+      - name: Integration tests (IT01-IT16)
+        env:
+          PYTEST_ARGS: ${{ inputs.pytest_args }}
+        run: |
+          mkdir -p "$TP_WORKDIR/reports/integration"
+          # shellcheck disable=SC2086 # PYTEST_ARGS is intentionally word-split
+          .venv/bin/python -m pytest tests/integration -m integration -v \
+            --junitxml="$TP_WORKDIR/reports/integration/junit.xml" $PYTEST_ARGS
+
+      - name: Stop session and infrastructure (data preserved)
+        if: always()
+        run: |
+          if [ -x .venv/bin/python ]; then
+            .venv/bin/python scripts/demo.py stop --all --profile local-native --workdir "$TP_WORKDIR"
+          fi
+
+      - name: Collect evidence
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          for p in reports runtime/runtime.json runtime/bootstrap_report.json logs; do
+            if [ -e "$TP_WORKDIR/$p" ]; then
+              cp -r "$TP_WORKDIR/$p" "$RUNNER_TEMP/evidence/" 2>/dev/null || true
+            fi
+          done
+          if [ -f uv.lock ]; then cp uv.lock "$RUNNER_TEMP/evidence/"; fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: integration-evidence
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 14

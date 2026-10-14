@@ -1,0 +1,65 @@
+{
+  "header": {"gtfs_realtime_version": "2.0", "incrementality": "FULL_DATASET", "timestamp": 1791201620},
+  "entity": [
+    {
+      "id": "tu-T1",
+      "trip_update": {
+        "trip": {"trip_id": "T1", "route_id": "R_A", "direction_id": 0, "start_date": "20261005", "start_time": "07:55:00", "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_sequence": 3, "stop_id": "S3", "arrival": {"time": 1791202260, "uncertainty": 301}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-T2",
+      "trip_update": {
+        "trip": {"trip_id": "T2", "route_id": "R_A", "direction_id": 1, "start_date": "20261005", "start_time": "07:58:00", "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_sequence": 2, "stop_id": "S3", "arrival": {"time": 1791201960, "uncertainty": 300}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-T3",
+      "trip_update": {
+        "trip": {"trip_id": "T3", "route_id": "R_A", "direction_id": 0, "start_date": "20261005", "start_time": "08:10:00", "schedule_relationship": "CANCELED"}
+      }
+    },
+    {
+      "id": "tu-T5",
+      "trip_update": {
+        "trip": {"trip_id": "T5", "route_id": "R_B", "direction_id": 0, "start_date": "20261005", "start_time": "08:00:00", "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_sequence": 2, "stop_id": "S6", "arrival": {"time": 1791202140, "uncertainty": 360}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-T6",
+      "trip_update": {
+        "trip": {"trip_id": "T6", "route_id": "R_B", "direction_id": 0, "start_date": "20261005", "start_time": "08:00:00", "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_sequence": 2, "stop_id": "S6", "arrival": {"time": 1791202080}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-T7",
+      "trip_update": {
+        "trip": {"trip_id": "T7", "route_id": "R_B", "direction_id": 0, "start_date": "20261005", "start_time": "08:02:00", "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_sequence": 2, "stop_id": "S6", "arrival": {"time": 1791201960, "uncertainty": 60}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-ADDED_1",
+      "trip_update": {
+        "trip": {"trip_id": "ADDED_1", "route_id": "R_B", "direction_id": 0, "start_date": "20261005", "start_time": "08:04:00", "schedule_relationship": "ADDED"},
+        "stop_time_update": [
+          {"stop_id": "S5", "arrival": {"time": 1791201840}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    }
+  ]
+}

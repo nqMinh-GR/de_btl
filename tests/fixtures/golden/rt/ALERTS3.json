@@ -1,0 +1,39 @@
+{
+  "header": {"gtfs_realtime_version": "2.0", "incrementality": "FULL_DATASET", "timestamp": 1791201720},
+  "entity": [
+    {
+      "id": "A1",
+      "alert": {
+        "active_period": [{"start": 1791198000, "end": 1791205200}],
+        "informed_entity": [{"agency_id": "SYN", "route_id": "R_A", "route_type": 3}],
+        "cause": "CONSTRUCTION",
+        "effect": "DETOUR",
+        "severity_level": "WARNING",
+        "header_text": {"translation": [{"text": "Synthetic alert A1: route R_A detour 11:00-13:00Z (NOT MBTA)", "language": "en"}]},
+        "description_text": {"translation": [{"text": "Synthetic test alert, route + agency + route_type selector, active window.", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A2",
+      "alert": {
+        "active_period": [{"start": 1791212400, "end": 1791219600}],
+        "informed_entity": [{"route_id": "R_B"}],
+        "cause": "MAINTENANCE",
+        "effect": "REDUCED_SERVICE",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A2: route R_B future work 15:00-17:00Z (NOT MBTA)", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A5",
+      "alert": {
+        "active_period": [{"start": "abc"}],
+        "informed_entity": [{"route_type": 3}],
+        "cause": "TECHNICAL_PROBLEM",
+        "effect": "OTHER_EFFECT",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A5 MALFORMED on purpose: active_period.start is a string (NOT MBTA)", "language": "en"}]}
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "header": {"gtfs_realtime_version": "2.0", "incrementality": "FULL_DATASET", "timestamp": 1791201620},
+  "entity": [
+    {
+      "id": "tu-T4",
+      "trip_update": {
+        "trip": {"trip_id": "T4", "route_id": "R_A", "direction_id": 0, "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_sequence": 1, "stop_id": "S1", "departure": {"time": 1791244200}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-T6",
+      "trip_update": {
+        "trip": {"trip_id": "T6", "route_id": "R_B", "direction_id": 0, "start_date": "20261005", "start_time": "08:00:00", "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_id": "S5", "arrival": {"time": 1791202200}, "schedule_relationship": "SCHEDULED"},
+          {"stop_id": "S7", "arrival": {"time": 1791202020}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-T5",
+      "trip_update": {
+        "trip": {"trip_id": "T5", "route_id": "R_B", "direction_id": 0, "start_date": "20261005", "start_time": "08:00:00", "schedule_relationship": "SCHEDULED"},
+        "stop_time_update": [
+          {"stop_id": "S6", "arrival": {"time": 1791202140}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    }
+  ]
+}

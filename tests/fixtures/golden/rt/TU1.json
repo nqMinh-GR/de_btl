@@ -1,0 +1,29 @@
+{
+  "header": {"gtfs_realtime_version": "2.0", "incrementality": "FULL_DATASET", "timestamp": 1791201620},
+  "entity": [
+    {
+      "id": "tu-T1",
+      "trip_update": {
+        "trip": {"trip_id": "T1", "route_id": "R_A", "direction_id": 0, "start_date": "20261005", "start_time": "07:55:00", "schedule_relationship": "SCHEDULED"},
+        "vehicle": {"id": "V1", "label": "V1"},
+        "stop_time_update": [
+          {"stop_sequence": 3, "stop_id": "S3", "arrival": {"time": 1791202260}, "departure": {"time": 1791202260}, "schedule_relationship": "SCHEDULED"},
+          {"stop_sequence": 4, "stop_id": "S4", "arrival": {"time": 1791202560}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    },
+    {
+      "id": "tu-T2",
+      "trip_update": {
+        "trip": {"trip_id": "T2", "route_id": "R_A", "direction_id": 1, "start_date": "20261005", "start_time": "07:58:00", "schedule_relationship": "SCHEDULED"},
+        "vehicle": {"id": "V2", "label": "V2"},
+        "stop_time_update": [
+          {"stop_sequence": 1, "stop_id": "S4", "departure": {"time": 1791201600}, "schedule_relationship": "SCHEDULED"},
+          {"stop_sequence": 2, "stop_id": "S3", "arrival": {"time": 1791201960}, "departure": {"time": 1791201960}, "schedule_relationship": "SCHEDULED"},
+          {"stop_sequence": 3, "stop_id": "S2", "arrival": {"time": 1791202140}, "departure": {"time": 1791202140}, "schedule_relationship": "SCHEDULED"},
+          {"stop_sequence": 4, "stop_id": "S1", "arrival": {"time": 1791202380}, "schedule_relationship": "SCHEDULED"}
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "header": {"gtfs_realtime_version": "2.0", "incrementality": "FULL_DATASET", "timestamp": 1791201660},
+  "entity": [
+    {
+      "id": "vp-V1",
+      "vehicle": {
+        "trip": {"trip_id": "T1", "route_id": "R_A", "direction_id": 0, "start_date": "20261005", "start_time": "07:55:00", "schedule_relationship": "SCHEDULED"},
+        "vehicle": {"id": "V1", "label": "V1"},
+        "position": {"latitude": 42.3519, "longitude": -71.0581},
+        "current_stop_sequence": 3,
+        "stop_id": "S3",
+        "current_status": "IN_TRANSIT_TO",
+        "timestamp": 1791201655
+      }
+    },
+    {
+      "id": "vp-V3",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"id": "V3", "label": "V3"},
+        "position": {"latitude": 42.35, "longitude": -71.06}
+      }
+    }
+  ]
+}

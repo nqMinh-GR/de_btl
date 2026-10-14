@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "generated_by": "lead (hand-written at hand-over; regenerate with scripts/verify_environment.py)",
+  "generated_at": "2026-10-07T00:00:00Z",
+  "commit": null,
+  "commit_reason": "repository not yet under git on the build machine",
+  "note": "No project command (tests, bootstrap, services, notebook) was executed on the build machine, by user request. Every status below is therefore NOT_RUN / NOT_VERIFIED until evidence is produced on Colab or Linux.",
+  "statuses": {
+    "unit_tests": {"status": "NOT_RUN", "command": ".venv/bin/python -m pytest tests/unit tests/runtime -m \"unit or runtime\"", "evidence": []},
+    "spark_tests": {"status": "NOT_RUN", "command": ".venv/bin/python -m pytest tests/spark -m spark", "evidence": []},
+    "native_full_stack_linux": {"status": "NOT_RUN", "command": ".venv/bin/python -m pytest tests/integration -m integration", "evidence": []},
+    "docker_full_stack_local": {"status": "NOT_RUN", "reason": "no Docker daemon permission on the build machine", "evidence": []},
+    "clean_clone": {"status": "NOT_RUN", "evidence": []},
+    "notebook_schema_validation": {"status": "NOT_RUN", "command": "CI job 'ci.yml' (nbformat validation)", "evidence": []},
+    "managed_google_colab_run_all": {"status": "NOT_VERIFIED", "evidence": []},
+    "live_mbta_capture": {"status": "NOT_RUN", "evidence": []},
+    "replay_actual_recording": {"status": "NOT_RUN", "reason": "no real recording in the repository yet", "evidence": []},
+    "synthetic_golden_smoke": {"status": "NOT_RUN", "command": ".venv/bin/python scripts/demo.py golden-smoke --workdir $TP_WORKDIR", "evidence": []},
+    "offline_test": {"status": "NOT_RUN", "evidence": []},
+    "cloudflare_tunnel": {"status": "NOT_RUN", "command": ".venv/bin/python scripts/demo.py expose start --workdir $TP_WORKDIR", "evidence": []},
+    "benchmark_measured": {"status": "NO", "evidence": []}
+  }
+}

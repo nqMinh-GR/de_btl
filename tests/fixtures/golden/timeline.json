@@ -1,0 +1,90 @@
+{
+  "fixture_id": "golden-v1",
+  "provenance": "synthetic, hand-written, NOT MBTA data (see PROVENANCE.md)",
+  "agency_timezone": "America/New_York",
+  "scope_route_ids": ["R_A", "R_B"],
+  "runs": {
+    "golden": {
+      "description": "Spec md 17.1 / PDF p18 golden run: S1 first snapshots, S2 new VP, S3 duplicate VP2, S4 late re-delivery of VP1, S5 clock-only advance.",
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {"step": "S1", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:00:30Z"},
+          {"kind": "capture", "feed_type": "vehicle_positions", "file": "rt/VP1.json", "at": "2026-10-05T12:00:30Z", "label": "VP1"},
+          {"kind": "capture", "feed_type": "trip_updates", "file": "rt/TU1.json", "at": "2026-10-05T12:00:30Z", "label": "TU1"},
+          {"kind": "capture", "feed_type": "alerts", "file": "rt/ALERTS1.json", "at": "2026-10-05T12:00:30Z", "label": "ALERTS1"}
+        ]},
+        {"step": "S2", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:01:00Z"},
+          {"kind": "capture", "feed_type": "vehicle_positions", "file": "rt/VP2.json", "at": "2026-10-05T12:01:00Z", "label": "VP2"}
+        ]},
+        {"step": "S3", "items": [
+          {"kind": "republish", "label": "VP2", "at": "2026-10-05T12:01:00Z"}
+        ]},
+        {"step": "S4", "items": [
+          {"kind": "republish", "label": "VP1", "at": "2026-10-05T12:01:00Z"}
+        ]},
+        {"step": "S5", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:03:10Z"}
+        ]}
+      ]
+    },
+    "IT06": {
+      "description": "Missing timestamp, invalid GPS, future timestamp, clock skew, millisecond timestamp, missing vehicle id; then a malformed message on the VP topic (DLQ INVALID_JSON, view unchanged).",
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {"step": "S1", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:00:30Z"},
+          {"kind": "capture", "feed_type": "vehicle_positions", "file": "rt/IT06_VP.json", "at": "2026-10-05T12:00:30Z", "label": "IT06_VP"}
+        ]},
+        {"step": "S2", "items": [
+          {"kind": "malformed_envelope", "feed_type": "vehicle_positions", "at": "2026-10-05T12:00:30Z", "label": "IT06_BAD",
+           "value_text": "{\"schema_version\": 1, \"message_type\": \"snapshot\", \"feed_type\": \"vehicle_positions\", \"entities\": [\"{\\\"id\\\": \\\"vp-truncated"}
+        ]}
+      ]
+    },
+    "IT07": {
+      "description": "Ambiguous service date (T4 without start_date) and repeated stop without stop_sequence (T6 loop at S5).",
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {"step": "S1", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:00:30Z"},
+          {"kind": "capture", "feed_type": "trip_updates", "file": "rt/IT07_TU.json", "at": "2026-10-05T12:00:30Z", "label": "IT07_TU"}
+        ]}
+      ]
+    },
+    "IT08": {
+      "description": "MBTA bus uncertainty 301/300/360/absent/60, one CANCELED trip and one ADDED trip.",
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {"step": "S1", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:00:30Z"},
+          {"kind": "capture", "feed_type": "trip_updates", "file": "rt/IT08_TU.json", "at": "2026-10-05T12:00:30Z", "label": "IT08_TU"}
+        ]}
+      ]
+    },
+    "IT09": {
+      "description": "Alerts: full snapshot, full snapshot without A3 (A3 closed), partial snapshot with malformed A5 and A4/A8 omitted (inherited, nothing closed).",
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {"step": "S1", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:00:30Z"},
+          {"kind": "capture", "feed_type": "alerts", "file": "rt/ALERTS1.json", "at": "2026-10-05T12:00:30Z", "label": "ALERTS1"}
+        ]},
+        {"step": "S2", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:01:00Z"},
+          {"kind": "capture", "feed_type": "alerts", "file": "rt/ALERTS2.json", "at": "2026-10-05T12:01:00Z", "label": "ALERTS2"}
+        ]},
+        {"step": "S3", "items": [
+          {"kind": "tick", "at": "2026-10-05T12:02:00Z"},
+          {"kind": "capture", "feed_type": "alerts", "file": "rt/ALERTS3.json", "at": "2026-10-05T12:02:00Z", "label": "ALERTS3"}
+        ]}
+      ]
+    }
+  }
+}

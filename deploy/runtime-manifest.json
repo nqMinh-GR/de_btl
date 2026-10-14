@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "profile": "colab-native",
+  "description": "Pinned native artifacts for the colab-native / local-native runner. Checksum values are null until verified values are committed (decision D-ENV-05): bootstrap fetches the publisher's official checksum from the same origin as the archive and records VERIFIED only in W/runtime/bootstrap_report.json. Run `prepare_runtime.py --emit-pin-patch` after a successful bootstrap to obtain values to review and commit. Exception: cloudflared publishes its sha256 only in the release notes, so that value is committed (status PINNED) and is the sole reference.",
+  "platform": {"os": "linux", "arch": "x86_64", "libc": "glibc"},
+  "checksum_policy": {
+    "algorithms": ["sha256", "sha512"],
+    "sources": "publisher-official-only",
+    "require_pinned": false,
+    "on_mismatch": "fail",
+    "on_unavailable": "fail"
+  },
+  "python": {
+    "version_file": ".python-version",
+    "minor": "3.11",
+    "lock": {"file": "uv.lock", "sha256": null, "status": "NOT_GENERATED"}
+  },
+  "artifacts": [
+    {
+      "id": "uv",
+      "version": "0.12.23",
+      "type": "tar.gz",
+      "top_dir": "uv-x86_64-unknown-linux-gnu",
+      "urls": ["https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-unknown-linux-gnu.tar.gz"],
+      "checksum": {"algorithm": "sha256", "value": null, "official_source": "<url>.sha256", "format": "sha256sum"},
+      "install_to": "tools/uv/0.12.23",
+      "probe": ["uv", "--version"],
+      "expect": "uv 0.12.23",
+      "installed_by": "scripts/bootstrap_colab.sh (phase A)",
+      "status": "URL_CONFIRMED"
+    },
+    {
+      "id": "jdk",
+      "vendor": "Eclipse Temurin",
+      "version": "17.0.20.1+1",
+      "type": "tar.gz",
+      "top_dir": "jdk-17.0.20.1+1",
+      "urls": ["https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz"],
+      "checksum": {
+        "algorithm": "sha256",
+        "value": null,
+        "official_source": "https://api.adoptium.net/v3/assets/version/17.0.20.1%2B1?architecture=x64&image_type=jdk&os=linux&vendor=eclipse&jvm_impl=hotspot",
+        "format": "adoptium-api:binaries[].package{name==archive}.checksum"
+      },
+      "install_to": "tools/jdk",
+      "expect": "17.0.20.1",
+      "expect_vendor": "Temurin",
+      "status": "URL_CONFIRMED"
+    },
+    {
+      "id": "kafka",
+      "version": "4.2.2",
+      "scala": "2.13",
+      "type": "tgz",
+      "top_dir": "kafka_2.13-4.2.2",
+      "urls": [
+        "https://downloads.apache.org/kafka/4.2.2/kafka_2.13-4.2.2.tgz",
+        "https://archive.apache.org/dist/kafka/4.2.2/kafka_2.13-4.2.2.tgz"
+      ],
+      "checksum": {"algorithm": "sha512", "value": null, "official_source": "<same-origin url>.sha512", "format": "gpg-print-md"},
+      "install_to": "tools/kafka",
+      "expect_file": "libs/kafka_2.13-4.2.2.jar",
+      "status": "URL_CONFIRMED"
+    },
+    {
+      "id": "cassandra",
+      "version": "5.0.9",
+      "type": "tar.gz",
+      "top_dir": "apache-cassandra-5.0.9",
+      "urls": [
+        "https://downloads.apache.org/cassandra/5.0.9/apache-cassandra-5.0.9-bin.tar.gz",
+        "https://archive.apache.org/dist/cassandra/5.0.9/apache-cassandra-5.0.9-bin.tar.gz"
+      ],
+      "checksum": {"algorithm": "sha256", "value": null, "official_source": "<same-origin url>.sha256", "format": "bare-or-sha256sum"},
+      "install_to": "tools/cassandra",
+      "expect_file": "lib/apache-cassandra-5.0.9.jar",
+      "expect": "5.0.9",
+      "status": "URL_CONFIRMED"
+    },
+    {
+      "id": "cloudflared",
+      "version": "2026.10.0",
+      "type": "binary",
+      "optional": true,
+      "purpose": "Cloudflare quick tunnel exposing the read-only dashboard from Colab (disable with bootstrap --no-tunnel)",
+      "urls": ["https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/cloudflared-linux-amd64"],
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "d33ff2d14475178d2012c2c56beba87389ac5ded27649519f198a7d3134a99db",
+        "official_source": "GitHub release notes 'SHA256 Checksums' of cloudflare/cloudflared 2026.10.0",
+        "format": "pinned-release-notes",
+        "pinned_on": "2026-10-07",
+        "note": "taken from the publisher's release notes; not yet downloaded or verified by a bootstrap"
+      },
+      "install_to": "tools/cloudflared/2026.10.0/cloudflared",
+      "mode": "0755",
+      "probe": ["cloudflared", "--version"],
+      "expect": "2026.10.0",
+      "status": "PINNED"
+    }
+  ],
+  "pyspark": {"version": "3.5.7", "scala": "2.12", "distribution": "pypi-sdist", "pinned_in": "pyproject.toml (==) and uv.lock"},
+  "spark_connector": {
+    "coordinate": "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7",
+    "resolver": "maven-central-only",
+    "resolver_settings": "deploy/native/spark/ivysettings.xml",
+    "jar_checksum_source": "maven-central .sha1",
+    "expected_direct": [
+      "org.apache.spark:spark-token-provider-kafka-0-10_2.12:3.5.7",
+      "org.apache.kafka:kafka-clients:3.4.1",
+      "org.apache.commons:commons-pool2:2.11.1"
+    ],
+    "lock_file": "cache/jars/spark-kafka-3.5.7/connector-lock.json",
+    "status": "PENDING_FIRST_RESOLVE"
+  }
+}

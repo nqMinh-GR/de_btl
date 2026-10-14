@@ -1,0 +1,8 @@
+# Profile colab-native: Google Colab CPU VM (runs as root, no Docker/systemd).
+profile: colab-native
+paths:
+  workdir: /content/transitpulse-runtime
+spark:
+  shuffle_partitions: 2
+runtime:
+  allow_root_in_demo_vm: true          # cassandra -R is used only when uid/gid == 0 and this is true

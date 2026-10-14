@@ -1,0 +1,9 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station
+S1,Synthetic Stop 1,42.35000,-71.06000,0,
+S2,Synthetic Stop 2,42.35100,-71.05900,0,
+S3,Synthetic Stop 3,42.35200,-71.05800,0,
+S4,Synthetic Stop 4,42.35300,-71.05700,0,
+S5,Synthetic Stop 5,42.36000,-71.05000,0,
+S6,Synthetic Stop 6,42.36100,-71.04900,0,
+S7,Synthetic Stop 7,42.36200,-71.04800,0,
+S9,Synthetic Stop 9,42.37000,-71.04000,0,

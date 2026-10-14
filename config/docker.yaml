@@ -1,0 +1,12 @@
+# Profile local-docker: Docker Compose services (NOT_RUN in this repository's verification).
+profile: local-docker
+paths:
+  workdir: /work
+kafka:
+  bootstrap_servers: "kafka:29092"
+cassandra:
+  hosts: ["cassandra"]
+api:
+  host: 0.0.0.0                        # inside the container; the host port is published on 127.0.0.1 only
+ui:
+  api_base_url: "http://api:8000/api/v1"

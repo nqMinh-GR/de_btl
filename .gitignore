@@ -1,0 +1,40 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Runtime work directories (never source-controlled)
+.runtime/
+transitpulse-runtime/
+/tools/
+/cache/
+/data/
+/checkpoints/
+/infra/
+/logs/
+/artifacts/
+/spark-warehouse/
+metastore_db/
+derby.log
+
+# Secrets
+.env
+*.pem
+*.key
+.git-credentials
+
+# Large generated outputs (keep small committed fixtures under tests/fixtures/)
+*.zip
+!tests/fixtures/**/*.zip
+*.parquet
+!tests/fixtures/**/*.parquet
+reports/generated/
+benchmarks/results/
+
+# Notebook checkpoints
+.ipynb_checkpoints/

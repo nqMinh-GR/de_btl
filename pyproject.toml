@@ -1,0 +1,80 @@
+[project]
+name = "transitpulse"
+version = "0.1.0"
+description = "TransitPulse MBTA: real-time bus monitoring and predicted-delay alerts (Kafka, Spark Structured Streaming, Cassandra, FastAPI)"
+readme = "README.md"
+requires-python = "==3.11.*"
+license = { text = "MIT" }
+# Direct dependencies are pinned exactly. uv.lock is generated on the first
+# Colab bootstrap when it is missing (see docs/versions.md and docs/decisions.md).
+dependencies = [
+    "pyspark==3.5.7",
+    "confluent-kafka==2.15.1",
+    "cassandra-driver==3.30.1",
+    "fastapi==0.142.2",
+    "uvicorn==0.54.0",
+    "pydantic==2.13.5",
+    "httpx==0.28.1",
+    "pyyaml==6.0.3",
+    "prometheus-client==0.26.0",
+    "psutil==7.2.2",
+    "tzdata==2026.5",
+]
+
+[project.optional-dependencies]
+# Streamlit/PyDeck dashboard: used locally and on Colab behind the Cloudflare quick tunnel.
+# Bootstrap always syncs it (`uv sync --locked --extra dashboard`); the notebook widget UI does not need it.
+dashboard = [
+    "streamlit==1.65.0",
+    "pydeck==0.9.3",
+]
+
+[project.scripts]
+transitpulse = "transitpulse.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-timeout==2.4.0",
+    "ruff==0.16.10",
+    "nbformat==5.11.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+default-groups = ["dev"]
+# pyspark 3.5.7 is an sdist on PyPI and is built at install time. Pin the build backend to the setuptools
+# line that was current when 3.5.7 was released, so later removals of legacy APIs cannot break the build.
+build-constraint-dependencies = ["setuptools<81"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "unit: pure-Python tests, no JVM, no services",
+    "spark: needs a local SparkSession (JDK 17 + pyspark), no Kafka/Cassandra",
+    "integration: needs real Kafka + Cassandra + Spark via the native runner",
+    "runtime: native runner / bootstrap / supervisor lifecycle tests",
+    "slow: long-running",
+    "performance: benchmark-style tests",
+    "it_case(id): links a test to an integration scenario id (IT01-IT16)",
+    "ct_case(id): links a test to a Colab/GitHub scenario id (CT01-CT15)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests", "scripts", "notebooks", "app", "benchmarks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# UP031 (%-format) is a style preference only; several modules format log/hint text with %.
+ignore = ["E501", "UP031"]
+
+[tool.ruff.lint.per-file-ignores]
+# The notebook UI must stay importable on older Colab kernels (Python 3.9+ syntax and typing aliases), and the
+# notebook's cells import helpers after defining parameters, so old-style annotations and late imports are expected.
+"notebooks/**" = ["UP006", "UP007", "UP035", "UP045", "E402"]

@@ -1,0 +1,262 @@
+# TransitPulse MBTA — Docker Compose, profile `local-docker`.
+#
+# STATUS: NOT_RUN in this repository's verification. The build environment had no Docker daemon access, so this
+# file and docker/app.Dockerfile have never been built or started here; the verified path is the native runner
+# (scripts/bootstrap_colab.sh + scripts/infra.py + scripts/demo.py). Use it through the Makefile:
+#   make build PROFILE=local-docker            # needs a committed uv.lock
+#   make infra-up PROFILE=local-docker && make init PROFILE=local-docker
+#   make static-load PROFILE=local-docker ROUTE_IDS=...
+#   make start-live PROFILE=local-docker ROUTE_IDS=... DURATION_SECONDS=7200
+#   make start-replay PROFILE=local-docker RECORDING=/work/data/inputs/<rec>/recording_manifest.json SPEED=10
+#
+# Security: every published port binds 127.0.0.1 only; Kafka and Cassandra talk to the app over the private
+# Compose network (kafka:29092, cassandra:9042). No credentials exist anywhere (MBTA feeds are public).
+# Data: named volumes (raw, checkpoints, curated, kafka, cassandra, work); `docker compose down` keeps them —
+# only an explicit `docker compose down -v` deletes data, and no Makefile target does that.
+
+name: transitpulse
+
+x-app: &app
+  image: ${TP_APP_IMAGE:-transitpulse-app:0.1.0}
+  build:
+    context: .
+    dockerfile: docker/app.Dockerfile
+  environment: &app-env
+    TP_PROFILE: local-docker
+    TP_WORKDIR: /work
+    TP_REPO_DIR: /app
+  volumes:
+    - tp-work:/work
+    - tp-raw:/work/data/raw
+    - tp-curated:/work/data/curated
+    - tp-checkpoints:/work/checkpoints
+  networks: [tp]
+  restart: "no"
+
+services:
+  kafka:
+    image: apache/kafka:4.2.2
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:29092,CONTROLLER://:9093,PLAINTEXT_HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://127.0.0.1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_NUM_PARTITIONS: "1"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "4"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_MESSAGE_MAX_BYTES: "5242880"
+      KAFKA_REPLICA_FETCH_MAX_BYTES: "5242880"
+      KAFKA_LOG_RETENTION_MS: "21600000"
+      KAFKA_LOG_SEGMENT_BYTES: "67108864"
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: "60000"
+      KAFKA_LOG_CLEANER_DEDUPE_BUFFER_SIZE: "33554432"
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9092:9092"
+    volumes:
+      - tp-kafka:/var/lib/kafka/data
+    networks: [tp]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:29092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 30s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  cassandra:
+    image: cassandra:5.0.9
+    hostname: cassandra
+    environment:
+      # JDK 17 -> G1: set MAX_HEAP_SIZE only, never HEAP_NEWSIZE (cassandra-env.sh rejects the pair under G1).
+      MAX_HEAP_SIZE: 1536M
+      MAX_DIRECT_MEMORY_SIZE: 512M
+      CASSANDRA_CLUSTER_NAME: TransitPulseDocker
+      CASSANDRA_ENDPOINT_SNITCH: SimpleSnitch
+      CASSANDRA_DC: datacenter1
+    ports:
+      - "127.0.0.1:9042:9042"
+    volumes:
+      - tp-cassandra:/var/lib/cassandra
+    networks: [tp]
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT release_version FROM system.local' 127.0.0.1 9042 >/dev/null 2>&1 || nodetool status 2>/dev/null | grep -q '^UN'"]
+      interval: 15s
+      timeout: 30s
+      retries: 40
+      start_period: 120s
+    restart: unless-stopped
+
+  # ---- one-shot jobs -------------------------------------------------------------------------------------------
+  runtime-init:
+    <<: *app
+    command: ["python", "/app/docker/render_runtime.py", "--workdir", "/work"]
+
+  init:
+    <<: *app
+    # Kafka topics (desired configs, drift reported, never deleted) + Cassandra migrations (checksummed, idempotent).
+    command: ["python", "-m", "transitpulse.runtime.cli_infra", "init", "--profile", "local-docker", "--workdir", "/work",
+              "--external-infra"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+      runtime-init:
+        condition: service_completed_successfully
+
+  static-loader:
+    <<: *app
+    profiles: ["static"]
+    environment:
+      <<: *app-env
+      ROUTE_IDS: ${ROUTE_IDS:-}
+      STATIC_ZIP: ${STATIC_ZIP:-}
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$ROUTE_IDS" || { echo "ROUTE_IDS is required (verified bus route ids: make list-routes)" >&2; exit 2; };
+        if [ -n "$$STATIC_ZIP" ]; then exec transitpulse static-load --zip "$$STATIC_ZIP" --route-ids "$$ROUTE_IDS";
+        else exec transitpulse static-load --download --route-ids "$$ROUTE_IDS"; fi
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  tools:
+    <<: *app
+    profiles: ["tools"]
+    command: ["transitpulse", "--help"]
+
+  # ---- long-running services (run id comes from `transitpulse run-create`, set by the Makefile) -----------------
+  processor:
+    <<: *app
+    profiles: ["live", "replay"]
+    environment:
+      <<: *app-env
+      TP_RUN_ID: ${TP_RUN_ID:-}
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$TP_RUN_ID" || { echo "TP_RUN_ID is required (make start-live / start-replay)" >&2; exit 2; };
+        exec transitpulse process --run-id "$$TP_RUN_ID"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "test -f \"/work/runs/$${TP_RUN_ID}/processor_ready.json\""]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    # The processor never restarts itself (D-PUB-06): a failed batch is visible as an exited container;
+    # restart it on the same run/checkpoint with `docker compose --profile live up -d processor`.
+    restart: "no"
+
+  collector:
+    <<: *app
+    profiles: ["live"]
+    environment:
+      <<: *app-env
+      TP_RUN_ID: ${TP_RUN_ID:-}
+      TP_DURATION_SECONDS: ${TP_DURATION_SECONDS:-7200}
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$TP_RUN_ID" || { echo "TP_RUN_ID is required" >&2; exit 2; };
+        exec transitpulse collect --run-id "$$TP_RUN_ID" --duration-seconds "$$TP_DURATION_SECONDS"
+    depends_on:
+      processor:
+        condition: service_healthy
+
+  publisher:
+    <<: *app
+    profiles: ["replay"]
+    environment:
+      <<: *app-env
+      TP_RUN_ID: ${TP_RUN_ID:-}
+      TP_SESSION_ID: ${TP_SESSION_ID:-}
+      TP_RECORDING: ${TP_RECORDING:-}
+      TP_SPEED: ${TP_SPEED:-10}
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$TP_RUN_ID" && test -n "$$TP_SESSION_ID" && test -n "$$TP_RECORDING" ||
+        { echo "TP_RUN_ID, TP_SESSION_ID and TP_RECORDING are required (make start-replay)" >&2; exit 2; };
+        exec transitpulse replay publish --run-id "$$TP_RUN_ID" --manifest "$$TP_RECORDING"
+        --session-id "$$TP_SESSION_ID" --speed "$$TP_SPEED"
+    depends_on:
+      processor:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    profiles: ["live", "replay", "app"]
+    command: ["transitpulse", "api"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/health/live >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  dashboard:
+    <<: *app
+    profiles: ["live", "replay", "app"]
+    environment:
+      <<: *app-env
+      TP_API_URL: http://api:8000/api/v1
+    # cwd app/ so app/.streamlit/config.toml applies; the bind address is overridden for the container network
+    # (the host side of the port is still 127.0.0.1 only).
+    working_dir: /app/app
+    command: ["python", "-m", "streamlit", "run", "streamlit_app.py", "--server.address", "0.0.0.0",
+              "--server.port", "8501", "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  tp-work:
+  tp-raw:
+  tp-curated:
+  tp-checkpoints:
+  tp-kafka:
+  tp-cassandra:
+
+networks:
+  tp:
+    driver: bridge

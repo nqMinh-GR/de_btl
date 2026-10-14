@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Ivy settings used ONLY by bootstrap step B7 to resolve the Spark Kafka connector closure
+  (org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7) through spark-submit -packages.
+  Maven Central is the single resolver; Ivy verifies the published sha1/md5 checksums of every
+  downloaded file. The Ivy user directory and cache are set by Spark from spark.jars.ivy
+  (W/cache/ivy); resolved jars are retrieved into W/cache/ivy/jars and then copied, after a second
+  sha1 check against Maven Central, into W/cache/jars/spark-kafka-3.5.7 with connector-lock.json.
+  Runtime launches use the pinned jar list with -jars and never resolve again.
+-->
+<ivysettings>
+  <property name="ivy.checksums" value="sha1,md5" override="true"/>
+  <settings defaultResolver="maven-central"/>
+  <resolvers>
+    <ibiblio name="maven-central" m2compatible="true" usepoms="true"
+             root="https://repo1.maven.org/maven2/"/>
+  </resolvers>
+</ivysettings>

@@ -1,0 +1,97 @@
+# CI: lint, unit tests, notebook validation, config/fixture/script/compose checks (spec md §23.5).
+# A JSON-valid notebook is NOT evidence that "Run All" passed; GitHub's Ubuntu runner is not managed Colab.
+# Real Kafka/Cassandra/Spark integration runs in integration.yml (manual dispatch).
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash   # bash --noprofile --norc -eo pipefail
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_PYTHON_PREFERENCE: only-managed
+  UV_HTTP_TIMEOUT: "300"
+  TP_PROFILE: local-native
+
+jobs:
+  lint-unit-checks:
+    name: lint, unit tests, repository checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up uv (pinned)
+        uses: astral-sh/setup-uv@v6.0.0
+        with:
+          version: "0.12.23"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Install Python from .python-version
+        run: uv python install
+
+      - name: Lockfile
+        id: lock
+        run: |
+          if [ -f uv.lock ]; then
+            uv lock --check
+            echo "origin=committed" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=uv.lock missing::uv.lock is not committed; generating one for this run. Commit it (or the lock exported by the Colab bootstrap) for reproducible builds."
+            uv lock
+            echo "origin=generated_in_ci" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync environment (core + dev group)
+        run: uv sync --locked
+
+      - name: Ruff
+        run: uv run --no-sync ruff check .
+
+      - name: Unit and runtime tests (CT entries -> ct_report.json)
+        env:
+          TP_WORKDIR: ${{ github.workspace }}/.runtime
+          PYTHONPATH: tests
+        run: |
+          mkdir -p reports
+          uv run --no-sync pytest -p plugins.test_report tests/unit tests/runtime -m "unit or runtime" -q \
+            --junitxml=reports/unit-runtime-junit.xml
+          if [ -f "$TP_WORKDIR/reports/ct_report.json" ]; then cp "$TP_WORKDIR/reports/ct_report.json" reports/; fi
+
+      - name: Notebook validation (nbformat schema, no outputs, no execution counts, no token-like strings)
+        run: uv run --no-sync python -m transitpulse.verify.repo_checks --only notebooks | tee reports/notebook_checks.json
+
+      - name: Config schemas, golden fixture, scripts, compose and migrations
+        run: |
+          uv run --no-sync python -m transitpulse.verify.repo_checks \
+            --only config,fixtures,scripts,compose,migrations | tee reports/repo_checks.json
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: ci-reports
+          path: reports/
+          if-no-files-found: ignore
+
+      - name: Upload the generated uv.lock
+        if: steps.lock.outputs.origin == 'generated_in_ci'
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: uv-lock-generated-in-ci
+          path: uv.lock

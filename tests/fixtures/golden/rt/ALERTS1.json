@@ -1,0 +1,90 @@
+{
+  "header": {"gtfs_realtime_version": "2.0", "incrementality": "FULL_DATASET", "timestamp": 1791201620},
+  "entity": [
+    {
+      "id": "A1",
+      "alert": {
+        "active_period": [{"start": 1791198000, "end": 1791205200}],
+        "informed_entity": [{"agency_id": "SYN", "route_id": "R_A", "route_type": 3}],
+        "cause": "CONSTRUCTION",
+        "effect": "DETOUR",
+        "severity_level": "WARNING",
+        "header_text": {"translation": [{"text": "Synthetic alert A1: route R_A detour 11:00-13:00Z (NOT MBTA)", "language": "en"}]},
+        "description_text": {"translation": [{"text": "Synthetic test alert, route + agency + route_type selector, active window.", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A2",
+      "alert": {
+        "active_period": [{"start": 1791212400, "end": 1791219600}],
+        "informed_entity": [{"route_id": "R_B"}],
+        "cause": "MAINTENANCE",
+        "effect": "REDUCED_SERVICE",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A2: route R_B future work 15:00-17:00Z (NOT MBTA)", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A3",
+      "alert": {
+        "informed_entity": [{"stop_id": "S3"}],
+        "cause": "OTHER_CAUSE",
+        "effect": "STOP_MOVED",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A3: stop S3 moved, no active_period (NOT MBTA)", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A4",
+      "alert": {
+        "active_period": [{"start": 1791190800, "end": 1791198000}],
+        "informed_entity": [{"agency_id": "SYN"}],
+        "cause": "WEATHER",
+        "effect": "SIGNIFICANT_DELAYS",
+        "severity_level": "WARNING",
+        "header_text": {"translation": [{"text": "Synthetic alert A4: agency-wide, ended 11:00Z (NOT MBTA)", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A5",
+      "alert": {
+        "active_period": [{"start": 1791198000}],
+        "informed_entity": [{"route_type": 3}],
+        "cause": "TECHNICAL_PROBLEM",
+        "effect": "OTHER_EFFECT",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A5: all bus routes, open-ended from 11:00Z (NOT MBTA)", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A6",
+      "alert": {
+        "informed_entity": [{"route_id": "R_A", "stop_id": "S5"}],
+        "cause": "OTHER_CAUSE",
+        "effect": "OTHER_EFFECT",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A6: R_A AND S5 (S5 is not served by R_A) (NOT MBTA)", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A7",
+      "alert": {
+        "informed_entity": [{"stop_id": "S_UNKNOWN"}],
+        "cause": "OTHER_CAUSE",
+        "effect": "OTHER_EFFECT",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A7: unknown stop selector (NOT MBTA)", "language": "en"}]}
+      }
+    },
+    {
+      "id": "A8",
+      "alert": {
+        "informed_entity": [{"trip": {"trip_id": "T5"}}, {"route_id": "R_A", "direction_id": 1}],
+        "cause": "OTHER_CAUSE",
+        "effect": "MODIFIED_SERVICE",
+        "severity_level": "INFO",
+        "header_text": {"translation": [{"text": "Synthetic alert A8: trip T5 OR route R_A direction 1 (NOT MBTA)", "language": "en"}]}
+      }
+    }
+  ]
+}

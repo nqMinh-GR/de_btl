@@ -1,0 +1,50 @@
+# TransitPulse colab-native / local-native Kafka 4.2.2 (KRaft, combined broker+controller, single node).
+# Rendered by scripts/prepare_runtime.py into W/conf/kafka/server.properties; never edit the rendered copy.
+# Based on the stock config/server.properties of kafka_2.13-4.2.2 (dynamic quorum, formatted with
+# `kafka-storage.sh format --standalone`). Listeners bind 127.0.0.1 only: nothing is exposed publicly.
+
+############################# Server Basics #############################
+process.roles=broker,controller
+node.id={{NODE_ID}}
+controller.quorum.bootstrap.servers={{BROKER_HOST}}:{{CONTROLLER_PORT}}
+
+############################# Socket Server Settings #############################
+listeners=PLAINTEXT://{{BROKER_HOST}}:{{BROKER_PORT}},CONTROLLER://{{BROKER_HOST}}:{{CONTROLLER_PORT}}
+advertised.listeners=PLAINTEXT://{{BROKER_HOST}}:{{BROKER_PORT}},CONTROLLER://{{BROKER_HOST}}:{{CONTROLLER_PORT}}
+listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+controller.listener.names=CONTROLLER
+inter.broker.listener.name=PLAINTEXT
+num.network.threads=2
+num.io.threads=4
+
+############################# Log Basics #############################
+log.dirs={{KAFKA_DATA_DIR}}
+num.partitions={{DEFAULT_PARTITIONS}}
+default.replication.factor={{REPLICATION_FACTOR}}
+min.insync.replicas=1
+num.recovery.threads.per.data.dir=1
+auto.create.topics.enable=false
+unclean.leader.election.enable=false
+
+############################# Internal Topic Settings (RF1 single node) #############################
+offsets.topic.replication.factor=1
+offsets.topic.num.partitions=4
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+share.coordinator.state.topic.replication.factor=1
+share.coordinator.state.topic.min.isr=1
+group.initial.rebalance.delay.ms=0
+
+############################# Size limits (4 MiB envelopes + headroom) #############################
+message.max.bytes={{MESSAGE_MAX_BYTES}}
+replica.fetch.max.bytes={{MESSAGE_MAX_BYTES}}
+
+############################# Log Retention Policy #############################
+# Small segments so that retention can actually delete data on low-volume topics
+# (the 1 GiB default segment would never roll within the 6 h retention window).
+log.retention.ms={{LOG_RETENTION_MS}}
+log.segment.bytes=67108864
+log.retention.check.interval.ms=60000
+log.cleaner.threads=1
+# Default dedupe buffer is 128 MiB of a 512 MiB heap; topics here use cleanup.policy=delete.
+log.cleaner.dedupe.buffer.size=33554432

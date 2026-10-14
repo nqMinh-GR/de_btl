@@ -1,0 +1,22 @@
+# Streamlit settings for the local TransitPulse dashboard (read when `streamlit run` is started from app/).
+# Bind to loopback only; no telemetry; no Mapbox token is needed (maps are rendered without a basemap).
+
+[server]
+address = "127.0.0.1"
+port = 8501
+headless = true
+runOnSave = false
+
+[browser]
+gatherUsageStats = false
+serverAddress = "127.0.0.1"
+serverPort = 8501
+
+[client]
+toolbarMode = "minimal"
+
+[runner]
+magicEnabled = false
+
+[theme]
+base = "light"

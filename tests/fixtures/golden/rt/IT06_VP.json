@@ -1,0 +1,79 @@
+{
+  "header": {"gtfs_realtime_version": "2.0", "incrementality": "FULL_DATASET", "timestamp": 1791201630},
+  "entity": [
+    {
+      "id": "vp-V1",
+      "vehicle": {
+        "trip": {"trip_id": "T1", "route_id": "R_A", "direction_id": 0, "start_date": "20261005", "start_time": "07:55:00", "schedule_relationship": "SCHEDULED"},
+        "vehicle": {"id": "V1", "label": "V1"},
+        "position": {"latitude": 42.3515, "longitude": -71.0585},
+        "current_stop_sequence": 3,
+        "stop_id": "S3",
+        "current_status": "IN_TRANSIT_TO",
+        "timestamp": 1791201610
+      }
+    },
+    {
+      "id": "vp-V3",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"id": "V3", "label": "V3"},
+        "position": {"latitude": 42.35, "longitude": -71.06}
+      }
+    },
+    {
+      "id": "vp-V4",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"id": "V4", "label": "V4"},
+        "position": {"latitude": 91.0, "longitude": -71.06},
+        "timestamp": 1791201610
+      }
+    },
+    {
+      "id": "vp-V5",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"id": "V5", "label": "V5"},
+        "position": {"latitude": 0.0, "longitude": 0.0},
+        "timestamp": 1791201610
+      }
+    },
+    {
+      "id": "vp-V6",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"id": "V6", "label": "V6"},
+        "position": {"latitude": 42.351, "longitude": -71.059},
+        "timestamp": 1791201640
+      }
+    },
+    {
+      "id": "vp-V7",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"id": "V7", "label": "V7"},
+        "position": {"latitude": 42.352, "longitude": -71.058},
+        "timestamp": 1791201633
+      }
+    },
+    {
+      "id": "vp-V8",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"id": "V8", "label": "V8"},
+        "position": {"latitude": 42.353, "longitude": -71.057},
+        "timestamp": 1791201610000
+      }
+    },
+    {
+      "id": "vp-noid",
+      "vehicle": {
+        "trip": {"route_id": "R_A"},
+        "vehicle": {"label": "NOID"},
+        "position": {"latitude": 42.3505, "longitude": -71.0595},
+        "timestamp": 1791201610
+      }
+    }
+  ]
+}

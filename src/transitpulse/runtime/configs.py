@@ -1,0 +1,216 @@
+"""Materialize native configs into ``W/conf`` (bootstrap step B8).
+
+Templates in ``deploy/native/`` are never modified; rendered files are written atomically and only
+when their content hash changes. ``W/conf/rendered.json`` records the sha256 of every rendered file.
+
+* ``conf/kafka/server.properties``  <- ``deploy/native/kafka/server.properties.tmpl`` + project config
+* ``conf/cassandra/``               <- the pinned distribution's ``conf/`` (minus samples) with
+                                       ``cassandra.yaml`` = distribution yaml merged with
+                                       ``deploy/native/cassandra/overrides.yaml``
+* ``conf/spark/ivysettings.xml``    <- ``deploy/native/spark/ivysettings.xml`` (Maven Central only)
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from transitpulse.config import ProjectConfig
+from transitpulse.runtime.paths import WorkPaths
+from transitpulse.runtime.util import atomic_write_bytes, atomic_write_json, iso_now, sha256_bytes
+
+KAFKA_CONTROLLER_PORT = 9093
+KAFKA_NODE_ID = 1
+_PLACEHOLDER = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
+
+# New-style Cassandra 4.1+/5.0 setting -> legacy names that must not coexist in cassandra.yaml.
+_LEGACY_SUFFIXES = ("_in_mb", "_in_kb", "_in_ms")
+_CASSANDRA_SKIP_SUFFIXES = (".sample", ".example")
+_CASSANDRA_SKIP_NAMES = frozenset({"cassandra_latest.yaml"})
+
+
+class ConfigRenderError(ValueError):
+    pass
+
+
+def render_template(text: str, values: Mapping[str, str]) -> str:
+    """Replace ``{{NAME}}`` placeholders; every placeholder must be known and every value non-empty."""
+    missing: set[str] = set()
+
+    def _sub(m: re.Match[str]) -> str:
+        key = m.group(1)
+        if key not in values or values[key] in (None, ""):
+            missing.add(key)
+            return m.group(0)
+        return str(values[key])
+
+    out = _PLACEHOLDER.sub(_sub, text)
+    if missing:
+        raise ConfigRenderError(f"unresolved template placeholders: {sorted(missing)}")
+    if "{{" in out or "}}" in out:
+        raise ConfigRenderError("rendered output still contains '{{' or '}}'")
+    return out
+
+
+def kafka_listener(cfg: ProjectConfig) -> tuple[str, int]:
+    first = cfg.kafka.bootstrap_servers.split(",")[0].strip()
+    host, _, port = first.rpartition(":")
+    if not host or not port.isdigit():
+        raise ConfigRenderError(f"kafka.bootstrap_servers must be host:port, got {cfg.kafka.bootstrap_servers!r}")
+    return host, int(port)
+
+
+def kafka_template_values(cfg: ProjectConfig, paths: WorkPaths) -> dict[str, str]:
+    host, port = kafka_listener(cfg)
+    return {
+        "NODE_ID": str(KAFKA_NODE_ID),
+        "BROKER_HOST": host,
+        "BROKER_PORT": str(port),
+        "CONTROLLER_PORT": str(KAFKA_CONTROLLER_PORT),
+        "KAFKA_DATA_DIR": str(paths.kafka_data),
+        "DEFAULT_PARTITIONS": str(cfg.kafka.partitions),
+        "REPLICATION_FACTOR": str(cfg.kafka.replication_factor),
+        "MESSAGE_MAX_BYTES": str(cfg.kafka.topic_max_message_bytes),
+        "LOG_RETENTION_MS": str(int(cfg.kafka.retention_hours * 3600 * 1000)),
+    }
+
+
+def cassandra_template_values(paths: WorkPaths) -> dict[str, str]:
+    return {"CASSANDRA_ROOT": str(paths.cassandra_root)}
+
+
+def merge_cassandra_yaml(base: Mapping[str, Any], overrides: Mapping[str, Any]) -> dict[str, Any]:
+    """Top-level replace of every override key; legacy aliases (``<key>_in_mb`` ...) are removed."""
+    merged = dict(base)
+    for key, value in overrides.items():
+        for suffix in _LEGACY_SUFFIXES:
+            merged.pop(f"{key}{suffix}", None)
+        merged[key] = value
+    return merged
+
+
+def cassandra_conf_files(cassandra_home: Path, overrides_text: str, paths: WorkPaths) -> dict[str, bytes]:
+    """relpath -> bytes for the whole distribution conf dir with the merged cassandra.yaml."""
+    src = cassandra_home / "conf"
+    if not (src / "cassandra.yaml").is_file():
+        raise ConfigRenderError(f"{src}/cassandra.yaml not found (is Cassandra installed?)")
+    out: dict[str, bytes] = {}
+    for path in sorted(src.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(src).as_posix()
+        if path.name in _CASSANDRA_SKIP_NAMES or path.name.endswith(_CASSANDRA_SKIP_SUFFIXES):
+            continue
+        if rel == "cassandra.yaml":
+            continue
+        out[rel] = path.read_bytes()
+    base = yaml.safe_load((src / "cassandra.yaml").read_text(encoding="utf-8")) or {}
+    if not isinstance(base, dict):
+        raise ConfigRenderError("distribution cassandra.yaml is not a mapping")
+    rendered = render_template(overrides_text, cassandra_template_values(paths))
+    overrides = yaml.safe_load(rendered) or {}
+    if not isinstance(overrides, dict):
+        raise ConfigRenderError("deploy/native/cassandra/overrides.yaml must be a mapping")
+    merged = merge_cassandra_yaml(base, overrides)
+    header = "# Generated by TransitPulse bootstrap: distribution cassandra.yaml + deploy/native/cassandra/overrides.yaml\n"
+    out["cassandra.yaml"] = (header + yaml.safe_dump(merged, default_flow_style=False, sort_keys=False)).encode("utf-8")
+    return out
+
+
+def kafka_server_properties_path(paths: WorkPaths) -> Path:
+    return paths.conf / "kafka" / "server.properties"
+
+
+def cassandra_conf_dir(paths: WorkPaths) -> Path:
+    return paths.conf / "cassandra"
+
+
+def ivysettings_path(paths: WorkPaths) -> Path:
+    return paths.conf / "spark" / "ivysettings.xml"
+
+
+def rendered_json_path(paths: WorkPaths) -> Path:
+    return paths.conf / "rendered.json"
+
+
+def _write_if_changed(path: Path, data: bytes) -> bool:
+    try:
+        if path.is_file() and sha256_bytes(path.read_bytes()) == sha256_bytes(data):
+            return False
+    except OSError:
+        pass
+    atomic_write_bytes(path, data)
+    return True
+
+
+def materialize(repo_dir: Path, paths: WorkPaths, cfg: ProjectConfig, *, cassandra_home: Path) -> dict[str, Any]:
+    """Render every native config. Returns the content of ``rendered.json``."""
+    deploy = repo_dir / "deploy" / "native"
+    files: dict[Path, bytes] = {}
+    tmpl = (deploy / "kafka" / "server.properties.tmpl").read_text(encoding="utf-8")
+    files[kafka_server_properties_path(paths)] = render_template(tmpl, kafka_template_values(cfg, paths)).encode()
+    overrides_text = (deploy / "cassandra" / "overrides.yaml").read_text(encoding="utf-8")
+    for rel, data in cassandra_conf_files(cassandra_home, overrides_text, paths).items():
+        files[cassandra_conf_dir(paths) / rel] = data
+    files[ivysettings_path(paths)] = (deploy / "spark" / "ivysettings.xml").read_bytes()
+
+    changed: list[str] = []
+    hashes: dict[str, str] = {}
+    for path, data in sorted(files.items(), key=lambda kv: str(kv[0])):
+        rel = path.relative_to(paths.conf).as_posix()
+        hashes[rel] = sha256_bytes(data)
+        if _write_if_changed(path, data):
+            changed.append(rel)
+    combined = sha256_bytes("\n".join(f"{k}={v}" for k, v in sorted(hashes.items())).encode())
+    previous = None
+    rj = rendered_json_path(paths)
+    if rj.is_file():
+        try:
+            previous = json.loads(rj.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            previous = None
+    record = {
+        "schema_version": 1,
+        "hash": combined,
+        "files": hashes,
+        "templates": {
+            "kafka": sha256_bytes(tmpl.encode()),
+            "cassandra_overrides": sha256_bytes(overrides_text.encode()),
+        },
+        "config_hash": cfg.config_hash(),
+        "rendered_at": (previous or {}).get("rendered_at") if not changed and previous else iso_now(),
+        "changed": changed,
+    }
+    if previous is None or previous.get("hash") != combined or changed:
+        atomic_write_json(rj, record)
+    return record
+
+
+def rendered_hash(paths: WorkPaths) -> str | None:
+    """Hash recorded in rendered.json (None if bootstrap never rendered configs)."""
+    try:
+        return json.loads(rendered_json_path(paths).read_text(encoding="utf-8")).get("hash")
+    except (OSError, ValueError):
+        return None
+
+
+def verify_rendered(paths: WorkPaths) -> list[str]:
+    """Files whose current content differs from rendered.json (edited by hand or missing)."""
+    try:
+        record = json.loads(rendered_json_path(paths).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ["rendered.json"]
+    problems: list[str] = []
+    for rel, digest in (record.get("files") or {}).items():
+        p = paths.conf / rel
+        try:
+            if sha256_bytes(p.read_bytes()) != digest:
+                problems.append(rel)
+        except OSError:
+            problems.append(rel)
+    return problems

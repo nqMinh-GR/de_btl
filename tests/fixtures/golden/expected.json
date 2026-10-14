@@ -1,0 +1,928 @@
+{
+  "schema_version": 1,
+  "fixture_id": "golden-v1",
+  "source_type": "synthetic",
+  "provenance": "synthetic, hand-written, NOT MBTA data; every value below was derived by hand from design C and spec md 11/17 (see PROVENANCE.md), never from the implementation",
+  "agency_timezone": "America/New_York",
+  "scope_route_ids": ["R_A", "R_B"],
+  "inputs_sha256": null,
+  "conventions": {
+    "instants": "UTC ISO-8601 with second precision and a trailing Z; consumers must compare parsed instants, not strings (the API uses millisecond precision)",
+    "labels": "pointer, deliveries, inherited_from, first_seen and closed_by use fixture capture labels; map them to run-specific snapshot ids through the materialization label map",
+    "vehicle_metrics": "serving view recomputed at the step clock (API)",
+    "vehicle_generation_metrics": "as stored by Spark for the pointer generation at feeds.vehicle_positions.metrics_as_of (route_metrics_by_snapshot)",
+    "vehicles": "valid rows: full record; invalid rows (frozen invalid_reason): route_id, class, age_s, invalid_reason, flags only",
+    "history": "cumulative vehicle_observations_by_day rows of valid vehicles; history of invalid vehicles is not asserted",
+    "prediction_metrics": "values as of feeds.trip_updates.metrics_as_of; stale is recomputed at the step clock (header age > 90 s)",
+    "targets": "one entry per trip instance (keyed by trip_id); late is null unless the instance is KPI-eligible",
+    "alerts_by_route": "state recomputed at the step clock; confirmation CONFIRMED or UNCONFIRMED_INHERITED",
+    "null": "null is a value and is compared strictly; numbers are compared with absolute tolerance 1e-9"
+  },
+  "policy": {
+    "vehicle_stale_seconds": 120,
+    "prediction_stale_seconds": 90,
+    "alert_stale_seconds": 300,
+    "predicted_late_seconds": 300,
+    "future_tolerance_seconds": 5,
+    "service_date_inference_window_seconds": 43200,
+    "timestamp_ms_threshold": 100000000000,
+    "uncertainty_policy": "mbta_bus_uncertainty_v1",
+    "target_policy": "first_future_resolved_stop_v1"
+  },
+  "policy_vectors": {
+    "uncertainty": [
+      {"uncertainty": null, "class": "unknown_uncertainty"},
+      {"uncertainty": 0, "class": "realtime"},
+      {"uncertainty": 60, "class": "realtime"},
+      {"uncertainty": 299, "class": "realtime"},
+      {"uncertainty": 300, "class": "schedule_only"},
+      {"uncertainty": 301, "class": "degraded"},
+      {"uncertainty": 302, "class": "invalid"},
+      {"uncertainty": 360, "class": "invalid"},
+      {"uncertainty": -1, "class": "invalid"},
+      {"uncertainty": 1.5, "class": "invalid"}
+    ],
+    "freshness": [
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201610, "position_valid": true, "expected": {"class": "fresh", "age_s": 20, "flags": []}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201420, "position_valid": true, "expected": {"class": "stale", "age_s": 210, "flags": []}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": null, "position_valid": true, "expected": {"class": "unknown", "age_s": null, "flags": []}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201640, "position_valid": true, "expected": {"class": "invalid", "age_s": null, "flags": ["FUTURE_TIMESTAMP"]}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201636, "position_valid": true, "expected": {"class": "invalid", "age_s": null, "flags": ["FUTURE_TIMESTAMP"]}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201635, "position_valid": true, "expected": {"class": "fresh", "age_s": 0, "flags": ["CLOCK_SKEW"]}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201633, "position_valid": true, "expected": {"class": "fresh", "age_s": 0, "flags": ["CLOCK_SKEW"]}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201630, "position_valid": true, "expected": {"class": "fresh", "age_s": 0, "flags": []}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201510, "position_valid": true, "expected": {"class": "fresh", "age_s": 120, "flags": []}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201509, "position_valid": true, "expected": {"class": "stale", "age_s": 121, "flags": []}},
+      {"clock": "2026-10-05T12:00:30Z", "observation_epoch": 1791201610, "position_valid": false, "expected": {"class": "invalid", "age_s": null, "flags": []}}
+    ],
+    "alert_state": [
+      {"active_period": [{"start": 1791198000, "end": 1791205200}], "clock_epoch": 1791201630, "state": "ACTIVE"},
+      {"active_period": [{"start": 1791198000, "end": 1791205200}], "clock_epoch": 1791198000, "state": "ACTIVE"},
+      {"active_period": [{"start": 1791198000, "end": 1791205200}], "clock_epoch": 1791205200, "state": "EXPIRED"},
+      {"active_period": [{"start": 1791198000, "end": 1791205200}], "clock_epoch": 1791197999, "state": "UPCOMING"},
+      {"active_period": [], "clock_epoch": 1791201630, "state": "ALWAYS"},
+      {"active_period": null, "clock_epoch": 1791201630, "state": "ALWAYS"},
+      {"active_period": [{"start": 1791198000}], "clock_epoch": 1791201630, "state": "ACTIVE"},
+      {"active_period": [{"end": 1791198000}], "clock_epoch": 1791201630, "state": "EXPIRED"},
+      {"active_period": [{"start": 1791190800, "end": 1791198000}], "clock_epoch": 1791201630, "state": "EXPIRED"},
+      {"active_period": [{"start": 1791212400, "end": 1791219600}], "clock_epoch": 1791201630, "state": "UPCOMING"},
+      {"active_period": [{"start": 1791190800, "end": 1791198000}, {"start": 1791212400, "end": 1791219600}], "clock_epoch": 1791201630, "state": "UPCOMING"}
+    ]
+  },
+  "static": {
+    "summary": {
+      "status": "PASSED",
+      "agency_timezone": "America/New_York",
+      "verified_route_ids": ["R_A", "R_B"],
+      "rejected_routes": [],
+      "checks": [
+        {"code": "OUT_OF_SCOPE_FILTERED", "severity": "info", "keys": ["R_X"]},
+        {"code": "REPEATED_STOP_IN_TRIP", "severity": "info", "keys": ["T6"]},
+        {"code": "SERVICE_TIME_GE_24H", "severity": "info", "keys": ["T4"]}
+      ],
+      "row_counts": {
+        "agency": [1, 1],
+        "routes": [3, 2],
+        "trips": [8, 7],
+        "stop_times": [28, 26],
+        "stops": [8, 7],
+        "calendar": [2, 2],
+        "calendar_dates": [2, 2],
+        "shapes": [17, 15],
+        "shape_ids": [5, 4],
+        "feed_info": [1, 1]
+      },
+      "service_dates": {"DAILY": 122, "WKDY": 88, "total": 210},
+      "service_date_range": {"min": "2026-09-01", "max": "2026-12-31"},
+      "stops_by_route": {
+        "R_A": {"S1": [0, 1], "S2": [0, 1], "S3": [0, 1], "S4": [0, 1]},
+        "R_B": {"S5": [0], "S6": [0], "S7": [0]}
+      },
+      "geometries_by_route": {
+        "R_A": {
+          "SH_A0": {"direction_ids": [0], "trip_count": 3, "point_count": 4},
+          "SH_A1": {"direction_ids": [1], "trip_count": 1, "point_count": 4}
+        },
+        "R_B": {
+          "SH_B0": {"direction_ids": [0], "trip_count": 2, "point_count": 3},
+          "SH_B1": {"direction_ids": [0], "trip_count": 1, "point_count": 4}
+        }
+      },
+      "trips": {
+        "T1": {"route_id": "R_A", "service_id": "WKDY", "direction_id": 0, "shape_id": "SH_A0", "first_departure_secs": 28500, "last_arrival_secs": 29400, "stop_count": 4, "has_repeated_stop": false, "schedule_valid": true},
+        "T2": {"route_id": "R_A", "service_id": "WKDY", "direction_id": 1, "shape_id": "SH_A1", "first_departure_secs": 28680, "last_arrival_secs": 29520, "stop_count": 4, "has_repeated_stop": false, "schedule_valid": true},
+        "T3": {"route_id": "R_A", "service_id": "WKDY", "direction_id": 0, "shape_id": "SH_A0", "first_departure_secs": 29400, "last_arrival_secs": 30300, "stop_count": 4, "has_repeated_stop": false, "schedule_valid": true},
+        "T4": {"route_id": "R_A", "service_id": "DAILY", "direction_id": 0, "shape_id": "SH_A0", "first_departure_secs": 71400, "last_arrival_secs": 90600, "stop_count": 4, "has_repeated_stop": false, "schedule_valid": true},
+        "T5": {"route_id": "R_B", "service_id": "WKDY", "direction_id": 0, "shape_id": "SH_B0", "first_departure_secs": 28800, "last_arrival_secs": 29400, "stop_count": 3, "has_repeated_stop": false, "schedule_valid": true},
+        "T6": {"route_id": "R_B", "service_id": "WKDY", "direction_id": 0, "shape_id": "SH_B1", "first_departure_secs": 28800, "last_arrival_secs": 29340, "stop_count": 4, "has_repeated_stop": true, "schedule_valid": true},
+        "T7": {"route_id": "R_B", "service_id": "WKDY", "direction_id": 0, "shape_id": "SH_B0", "first_departure_secs": 28920, "last_arrival_secs": 29520, "stop_count": 3, "has_repeated_stop": false, "schedule_valid": true}
+      },
+      "scope_index": {
+        "route_ids": ["R_A", "R_B"],
+        "route_type_by_route": {"R_A": 3, "R_B": 3},
+        "agency_by_route": {"R_A": "SYN", "R_B": "SYN"},
+        "agency_ids": ["SYN"],
+        "agency_timezone": "America/New_York",
+        "trip_to_route": {"T1": "R_A", "T2": "R_A", "T3": "R_A", "T4": "R_A", "T5": "R_B", "T6": "R_B", "T7": "R_B", "TX": "R_X"},
+        "scope_stop_ids": ["S1", "S2", "S3", "S4", "S5", "S6", "S7"],
+        "stops_by_route": {"R_A": ["S1", "S2", "S3", "S4"], "R_B": ["S5", "S6", "S7"]},
+        "parent_station": {}
+      }
+    },
+    "active_checks": [
+      {"service_id": "WKDY", "date": "2026-10-05", "active": true},
+      {"service_id": "WKDY", "date": "2026-10-06", "active": true},
+      {"service_id": "WKDY", "date": "2026-10-10", "active": true},
+      {"service_id": "WKDY", "date": "2026-10-11", "active": false},
+      {"service_id": "WKDY", "date": "2026-10-12", "active": false},
+      {"service_id": "WKDY", "date": "2026-08-31", "active": false},
+      {"service_id": "WKDY", "date": "2026-09-01", "active": true},
+      {"service_id": "WKDY", "date": "2026-12-31", "active": true},
+      {"service_id": "WKDY", "date": "2027-01-01", "active": false},
+      {"service_id": "DAILY", "date": "2026-10-04", "active": true},
+      {"service_id": "DAILY", "date": "2026-10-11", "active": true},
+      {"service_id": "DAILY", "date": "2026-10-12", "active": true},
+      {"service_id": "DAILY", "date": "2027-01-01", "active": false},
+      {"service_id": "NOPE", "date": "2026-10-05", "active": false}
+    ],
+    "time_vectors": [
+      {"service_date": "2026-10-05", "gtfs_time": "08:05:00", "expected": {"seconds": 29100, "anchor_utc": "2026-10-05T04:00:00Z", "scheduled_utc": "2026-10-05T12:05:00Z", "local_time": "2026-10-05T08:05:00-04:00", "wrong_local_midnight_utc": "2026-10-05T12:05:00Z"}},
+      {"service_date": "2026-10-05", "gtfs_time": "24:00:00", "expected": {"seconds": 86400, "anchor_utc": "2026-10-05T04:00:00Z", "scheduled_utc": "2026-10-06T04:00:00Z", "local_time": "2026-10-06T00:00:00-04:00", "wrong_local_midnight_utc": "2026-10-06T04:00:00Z"}},
+      {"service_date": "2026-10-05", "gtfs_time": "25:10:00", "expected": {"seconds": 90600, "anchor_utc": "2026-10-05T04:00:00Z", "scheduled_utc": "2026-10-06T05:10:00Z", "local_time": "2026-10-06T01:10:00-04:00", "wrong_local_midnight_utc": "2026-10-06T05:10:00Z"}},
+      {"service_date": "2026-03-08", "gtfs_time": "00:00:00", "expected": {"seconds": 0, "anchor_utc": "2026-03-08T04:00:00Z", "scheduled_utc": "2026-03-08T04:00:00Z", "local_time": "2026-03-07T23:00:00-05:00", "wrong_local_midnight_utc": "2026-03-08T05:00:00Z"}},
+      {"service_date": "2026-03-08", "gtfs_time": "01:30:00", "expected": {"seconds": 5400, "anchor_utc": "2026-03-08T04:00:00Z", "scheduled_utc": "2026-03-08T05:30:00Z", "local_time": "2026-03-08T00:30:00-05:00", "wrong_local_midnight_utc": "2026-03-08T06:30:00Z"}},
+      {"service_date": "2026-03-08", "gtfs_time": "08:05:00", "expected": {"seconds": 29100, "anchor_utc": "2026-03-08T04:00:00Z", "scheduled_utc": "2026-03-08T12:05:00Z", "local_time": "2026-03-08T08:05:00-04:00", "wrong_local_midnight_utc": "2026-03-08T13:05:00Z"}},
+      {"service_date": "2026-11-01", "gtfs_time": "00:00:00", "expected": {"seconds": 0, "anchor_utc": "2026-11-01T05:00:00Z", "scheduled_utc": "2026-11-01T05:00:00Z", "local_time": "2026-11-01T01:00:00-04:00", "wrong_local_midnight_utc": "2026-11-01T04:00:00Z"}},
+      {"service_date": "2026-11-01", "gtfs_time": "08:05:00", "expected": {"seconds": 29100, "anchor_utc": "2026-11-01T05:00:00Z", "scheduled_utc": "2026-11-01T13:05:00Z", "local_time": "2026-11-01T08:05:00-05:00", "wrong_local_midnight_utc": "2026-11-01T12:05:00Z"}},
+      {"service_date": "2026-10-31", "gtfs_time": "25:10:00", "expected": {"seconds": 90600, "anchor_utc": "2026-10-31T04:00:00Z", "scheduled_utc": "2026-11-01T05:10:00Z", "local_time": "2026-11-01T01:10:00-04:00", "wrong_local_midnight_utc": "2026-11-01T05:10:00Z"}},
+      {"service_date": "2026-03-07", "gtfs_time": "25:10:00", "expected": {"seconds": 90600, "anchor_utc": "2026-03-07T05:00:00Z", "scheduled_utc": "2026-03-08T06:10:00Z", "local_time": "2026-03-08T01:10:00-05:00", "wrong_local_midnight_utc": "2026-03-08T06:10:00Z"}}
+    ],
+    "resolution_vectors": [
+      {"name": "T4_no_start_date_ambiguous", "trip": {"trip_id": "T4", "route_id": "R_A", "direction_id": 0}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "ambiguous", "resolution_method": null, "service_date": null, "reason": "AMBIGUOUS_SERVICE_DATE", "candidates": ["2026-10-04", "2026-10-05"]}},
+      {"name": "T4_no_start_date_inferred_late_evening", "trip": {"trip_id": "T4", "route_id": "R_A", "direction_id": 0}, "clock": "2026-10-06T03:00:00Z",
+       "expected": {"schedule_resolution": "resolved", "resolution_method": "inferred", "service_date": "2026-10-05", "reason": "SERVICE_DATE_INFERRED", "candidates": ["2026-10-05"]}},
+      {"name": "T5_no_start_date_inferred", "trip": {"trip_id": "T5", "route_id": "R_B", "direction_id": 0}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "resolved", "resolution_method": "inferred", "service_date": "2026-10-05", "reason": "SERVICE_DATE_INFERRED", "candidates": ["2026-10-05"]}},
+      {"name": "T1_descriptor", "trip": {"trip_id": "T1", "route_id": "R_A", "direction_id": 0, "start_date": "20261005", "start_time": "07:55:00"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "reason": null, "candidates": null}},
+      {"name": "T4_descriptor_overnight", "trip": {"trip_id": "T4", "route_id": "R_A", "direction_id": 0, "start_date": "20261005"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "reason": null, "candidates": null}},
+      {"name": "T1_added_exception_saturday", "trip": {"trip_id": "T1", "start_date": "20261010"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-10", "reason": null, "candidates": null}},
+      {"name": "T1_sunday_not_active", "trip": {"trip_id": "T1", "start_date": "20261011"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "unresolved", "resolution_method": null, "service_date": null, "reason": "SERVICE_NOT_ACTIVE_ON_START_DATE", "candidates": null}},
+      {"name": "T1_removed_exception_monday", "trip": {"trip_id": "T1", "start_date": "20261012"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "unresolved", "resolution_method": null, "service_date": null, "reason": "SERVICE_NOT_ACTIVE_ON_START_DATE", "candidates": null}},
+      {"name": "T1_start_time_mismatch", "trip": {"trip_id": "T1", "start_date": "20261005", "start_time": "08:00:00"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "unresolved", "resolution_method": null, "service_date": null, "reason": "START_TIME_MISMATCH", "candidates": null}},
+      {"name": "T1_route_mismatch", "trip": {"trip_id": "T1", "route_id": "R_B", "start_date": "20261005"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "unresolved", "resolution_method": null, "service_date": null, "reason": "DESCRIPTOR_STATIC_MISMATCH", "candidates": null}},
+      {"name": "T2_direction_mismatch", "trip": {"trip_id": "T2", "route_id": "R_A", "direction_id": 0, "start_date": "20261005"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "unresolved", "resolution_method": null, "service_date": null, "reason": "DESCRIPTOR_STATIC_MISMATCH", "candidates": null}},
+      {"name": "unknown_trip", "trip": {"trip_id": "T_UNKNOWN", "route_id": "R_A", "start_date": "20261005"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "unresolved", "resolution_method": null, "service_date": null, "reason": "UNKNOWN_ROUTE_OR_TRIP", "candidates": null}},
+      {"name": "out_of_scope_trip", "trip": {"trip_id": "TX", "start_date": "20261005"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "unresolved", "resolution_method": null, "service_date": null, "reason": "UNKNOWN_ROUTE_OR_TRIP", "candidates": null}},
+      {"name": "added_trip", "trip": {"trip_id": "ADDED_1", "route_id": "R_B", "direction_id": 0, "start_date": "20261005", "schedule_relationship": "ADDED"}, "clock": "2026-10-05T12:00:30Z",
+       "expected": {"schedule_resolution": "not_applicable", "resolution_method": null, "service_date": null, "reason": null, "candidates": null}}
+    ],
+    "stop_resolution_vectors": [
+      {"trip_id": "T6", "stop_sequence": null, "stop_id": "S5", "expected": {"resolved": false, "stop_sequence": null, "stop_id": "S5", "reason": "UNRESOLVED_STOP_SEQUENCE"}},
+      {"trip_id": "T6", "stop_sequence": null, "stop_id": "S7", "expected": {"resolved": true, "stop_sequence": 3, "stop_id": "S7", "reason": null}},
+      {"trip_id": "T6", "stop_sequence": 4, "stop_id": "S5", "expected": {"resolved": true, "stop_sequence": 4, "stop_id": "S5", "reason": null}},
+      {"trip_id": "T6", "stop_sequence": 1, "stop_id": null, "expected": {"resolved": true, "stop_sequence": 1, "stop_id": "S5", "reason": null}},
+      {"trip_id": "T6", "stop_sequence": 2, "stop_id": "S7", "expected": {"resolved": false, "stop_sequence": null, "stop_id": "S7", "reason": "STOP_ID_SEQUENCE_MISMATCH"}},
+      {"trip_id": "T5", "stop_sequence": null, "stop_id": "S6", "expected": {"resolved": true, "stop_sequence": 2, "stop_id": "S6", "reason": null}},
+      {"trip_id": "T5", "stop_sequence": null, "stop_id": "S1", "expected": {"resolved": false, "stop_sequence": null, "stop_id": "S1", "reason": "UNKNOWN_STOP_FOR_TRIP"}},
+      {"trip_id": "T1", "stop_sequence": 9, "stop_id": null, "expected": {"resolved": false, "stop_sequence": null, "stop_id": null, "reason": "UNKNOWN_STOP_FOR_TRIP"}}
+    ]
+  },
+  "captures": {
+    "VP1": {"file": "rt/VP1.json", "feed_type": "vehicle_positions", "header_timestamp": 1791201620, "header_iso": "2026-10-05T12:00:20Z", "fetched_at": "2026-10-05T12:00:30Z", "source_entity_count": 3, "candidate_count": 3},
+    "VP2": {"file": "rt/VP2.json", "feed_type": "vehicle_positions", "header_timestamp": 1791201660, "header_iso": "2026-10-05T12:01:00Z", "fetched_at": "2026-10-05T12:01:00Z", "source_entity_count": 2, "candidate_count": 2},
+    "TU1": {"file": "rt/TU1.json", "feed_type": "trip_updates", "header_timestamp": 1791201620, "header_iso": "2026-10-05T12:00:20Z", "fetched_at": "2026-10-05T12:00:30Z", "source_entity_count": 2, "candidate_count": 9},
+    "ALERTS1": {"file": "rt/ALERTS1.json", "feed_type": "alerts", "header_timestamp": 1791201620, "header_iso": "2026-10-05T12:00:20Z", "fetched_at": "2026-10-05T12:00:30Z", "source_entity_count": 8, "candidate_count": 9},
+    "ALERTS2": {"file": "rt/ALERTS2.json", "feed_type": "alerts", "header_timestamp": 1791201660, "header_iso": "2026-10-05T12:01:00Z", "fetched_at": "2026-10-05T12:01:00Z", "source_entity_count": 7, "candidate_count": 8},
+    "ALERTS3": {"file": "rt/ALERTS3.json", "feed_type": "alerts", "header_timestamp": 1791201720, "header_iso": "2026-10-05T12:02:00Z", "fetched_at": "2026-10-05T12:02:00Z", "source_entity_count": 3, "candidate_count": 3},
+    "IT06_VP": {"file": "rt/IT06_VP.json", "feed_type": "vehicle_positions", "header_timestamp": 1791201630, "header_iso": "2026-10-05T12:00:30Z", "fetched_at": "2026-10-05T12:00:30Z", "source_entity_count": 8, "candidate_count": 8},
+    "IT07_TU": {"file": "rt/IT07_TU.json", "feed_type": "trip_updates", "header_timestamp": 1791201620, "header_iso": "2026-10-05T12:00:20Z", "fetched_at": "2026-10-05T12:00:30Z", "source_entity_count": 3, "candidate_count": 4},
+    "IT08_TU": {"file": "rt/IT08_TU.json", "feed_type": "trip_updates", "header_timestamp": 1791201620, "header_iso": "2026-10-05T12:00:20Z", "fetched_at": "2026-10-05T12:00:30Z", "source_entity_count": 7, "candidate_count": 6}
+  },
+  "epochs": {
+    "1791172800": "2026-10-05T04:00:00Z",
+    "1791190800": "2026-10-05T09:00:00Z",
+    "1791197999": "2026-10-05T10:59:59Z",
+    "1791198000": "2026-10-05T11:00:00Z",
+    "1791201420": "2026-10-05T11:57:00Z",
+    "1791201480": "2026-10-05T11:58:00Z",
+    "1791201509": "2026-10-05T11:58:29Z",
+    "1791201510": "2026-10-05T11:58:30Z",
+    "1791201600": "2026-10-05T12:00:00Z",
+    "1791201610": "2026-10-05T12:00:10Z",
+    "1791201620": "2026-10-05T12:00:20Z",
+    "1791201630": "2026-10-05T12:00:30Z",
+    "1791201633": "2026-10-05T12:00:33Z",
+    "1791201635": "2026-10-05T12:00:35Z",
+    "1791201636": "2026-10-05T12:00:36Z",
+    "1791201640": "2026-10-05T12:00:40Z",
+    "1791201655": "2026-10-05T12:00:55Z",
+    "1791201660": "2026-10-05T12:01:00Z",
+    "1791201720": "2026-10-05T12:02:00Z",
+    "1791201780": "2026-10-05T12:03:00Z",
+    "1791201790": "2026-10-05T12:03:10Z",
+    "1791201840": "2026-10-05T12:04:00Z",
+    "1791201900": "2026-10-05T12:05:00Z",
+    "1791201960": "2026-10-05T12:06:00Z",
+    "1791202020": "2026-10-05T12:07:00Z",
+    "1791202080": "2026-10-05T12:08:00Z",
+    "1791202140": "2026-10-05T12:09:00Z",
+    "1791202200": "2026-10-05T12:10:00Z",
+    "1791202260": "2026-10-05T12:11:00Z",
+    "1791202320": "2026-10-05T12:12:00Z",
+    "1791202380": "2026-10-05T12:13:00Z",
+    "1791202560": "2026-10-05T12:16:00Z",
+    "1791205200": "2026-10-05T13:00:00Z",
+    "1791212400": "2026-10-05T15:00:00Z",
+    "1791219600": "2026-10-05T17:00:00Z",
+    "1791244200": "2026-10-05T23:50:00Z",
+    "1791255600": "2026-10-06T03:00:00Z",
+    "1791259200": "2026-10-06T04:00:00Z",
+    "1791263400": "2026-10-06T05:10:00Z",
+    "1791201610000": "2026-10-05T12:00:10Z"
+  },
+  "runs": {
+    "golden": {
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {
+          "step": "S1",
+          "clock": "2026-10-05T12:00:30Z",
+          "inputs": ["VP1", "TU1", "ALERTS1"],
+          "expect": {
+            "pointer": {"vehicle_positions": "VP1", "trip_updates": "TU1", "alerts": "ALERTS1"},
+            "deliveries": [
+              {"label": "VP1", "feed_type": "vehicle_positions", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true},
+              {"label": "TU1", "feed_type": "trip_updates", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true},
+              {"label": "ALERTS1", "feed_type": "alerts", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 3, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": {"label": "VP1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 10, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 3, "rejected_entity_count": 0},
+              "trip_updates": {"label": "TU1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 10, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "alerts": {"label": "ALERTS1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 10, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 0}
+            },
+            "vehicle_metrics": {"R_A": {"fresh": 1, "stale": 1, "unknown": 1, "invalid": 0, "membership": 3}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicle_generation_metrics": {"R_A": {"fresh": 1, "stale": 1, "unknown": 1, "invalid": 0, "membership": 3}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicles": {
+              "V1": {"route_id": "R_A", "trip_id": "T1", "class": "fresh", "age_s": 20, "record_kind": "observation", "observation_time": "2026-10-05T12:00:10Z", "event_time": "2026-10-05T12:00:10Z", "latitude": 42.3515, "longitude": -71.0585, "invalid_reason": null, "flags": []},
+              "V2": {"route_id": "R_A", "trip_id": "T2", "class": "stale", "age_s": 210, "record_kind": "observation", "observation_time": "2026-10-05T11:57:00Z", "event_time": "2026-10-05T11:57:00Z", "latitude": 42.3525, "longitude": -71.0575, "invalid_reason": null, "flags": []},
+              "V3": {"route_id": "R_A", "trip_id": null, "class": "unknown", "age_s": null, "record_kind": "snapshot_state_sample", "observation_time": null, "event_time": "2026-10-05T12:00:20Z", "latitude": 42.35, "longitude": -71.06, "invalid_reason": null, "flags": ["MISSING_OBSERVATION_TIMESTAMP"]}
+            },
+            "vehicle_quality": {"MISSING_OBSERVATION_TIMESTAMP": 1},
+            "history": {
+              "V1": {"rows": 1, "event_times": ["2026-10-05T12:00:10Z"]},
+              "V2": {"rows": 1, "event_times": ["2026-10-05T11:57:00Z"]},
+              "V3": {"rows": 1, "event_times": ["2026-10-05T12:00:20Z"]}
+            },
+            "prediction_metrics": {
+              "R_A": {"trip_instances": 2, "eligible": 2, "late": 1, "rate": 0.5, "mean": 210.0, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 2, "stale": false},
+              "R_B": {"trip_instances": 0, "eligible": 0, "late": 0, "rate": null, "mean": null, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 0, "stale": false}
+            },
+            "targets": {
+              "T1": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 3, "stop_id": "S3", "event_type": "arrival", "delay_s": 360, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": true},
+              "T2": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S3", "event_type": "arrival", "delay_s": 60, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": false}
+            },
+            "predictions": [
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:16:00Z", "scheduled_at": "2026-10-05T12:10:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 1, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:00:00Z", "scheduled_at": "2026-10-05T11:58:00Z", "delay_s": 120, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S1", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:13:00Z", "scheduled_at": "2026-10-05T12:12:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"}
+            ],
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A3": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved", "A3": "resolved", "A4": "resolved", "A5": "resolved", "A6": "resolved", "A7": "unresolved", "A8": "resolved"},
+            "alert_quality": {"A6": ["NO_SCOPE_MATCH"], "A7": ["UNRESOLVED_ALERT_SELECTOR"]},
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        },
+        {
+          "step": "S2",
+          "clock": "2026-10-05T12:01:00Z",
+          "inputs": ["VP2"],
+          "expect": {
+            "pointer": {"vehicle_positions": "VP2", "trip_updates": "TU1", "alerts": "ALERTS1"},
+            "deliveries": [
+              {"label": "VP2", "feed_type": "vehicle_positions", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 4, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": {"label": "VP2", "feed_timestamp": "2026-10-05T12:01:00Z", "metrics_as_of": "2026-10-05T12:01:00Z", "age_s": 0, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "trip_updates": {"label": "TU1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 40, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "alerts": {"label": "ALERTS1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 40, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 0}
+            },
+            "vehicle_metrics": {"R_A": {"fresh": 1, "stale": 0, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicle_generation_metrics": {"R_A": {"fresh": 1, "stale": 0, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicles": {
+              "V1": {"route_id": "R_A", "trip_id": "T1", "class": "fresh", "age_s": 5, "record_kind": "observation", "observation_time": "2026-10-05T12:00:55Z", "event_time": "2026-10-05T12:00:55Z", "latitude": 42.3519, "longitude": -71.0581, "invalid_reason": null, "flags": []},
+              "V3": {"route_id": "R_A", "trip_id": null, "class": "unknown", "age_s": null, "record_kind": "snapshot_state_sample", "observation_time": null, "event_time": "2026-10-05T12:01:00Z", "latitude": 42.35, "longitude": -71.06, "invalid_reason": null, "flags": ["MISSING_OBSERVATION_TIMESTAMP"]}
+            },
+            "vehicle_quality": {"MISSING_OBSERVATION_TIMESTAMP": 1},
+            "history": {
+              "V1": {"rows": 2, "event_times": ["2026-10-05T12:00:10Z", "2026-10-05T12:00:55Z"]},
+              "V2": {"rows": 1, "event_times": ["2026-10-05T11:57:00Z"]},
+              "V3": {"rows": 2, "event_times": ["2026-10-05T12:00:20Z", "2026-10-05T12:01:00Z"]}
+            },
+            "prediction_metrics": {
+              "R_A": {"trip_instances": 2, "eligible": 2, "late": 1, "rate": 0.5, "mean": 210.0, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 2, "stale": false},
+              "R_B": {"trip_instances": 0, "eligible": 0, "late": 0, "rate": null, "mean": null, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 0, "stale": false}
+            },
+            "targets": {
+              "T1": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 3, "stop_id": "S3", "event_type": "arrival", "delay_s": 360, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": true},
+              "T2": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S3", "event_type": "arrival", "delay_s": 60, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": false}
+            },
+            "predictions": [
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:16:00Z", "scheduled_at": "2026-10-05T12:10:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 1, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:00:00Z", "scheduled_at": "2026-10-05T11:58:00Z", "delay_s": 120, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S1", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:13:00Z", "scheduled_at": "2026-10-05T12:12:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"}
+            ],
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A3": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved", "A3": "resolved", "A4": "resolved", "A5": "resolved", "A6": "resolved", "A7": "unresolved", "A8": "resolved"},
+            "alert_quality": {"A6": ["NO_SCOPE_MATCH"], "A7": ["UNRESOLVED_ALERT_SELECTOR"]},
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        },
+        {
+          "step": "S3",
+          "clock": "2026-10-05T12:01:00Z",
+          "inputs": ["VP2"],
+          "expect": {
+            "pointer": {"vehicle_positions": "VP2", "trip_updates": "TU1", "alerts": "ALERTS1"},
+            "deliveries": [
+              {"label": "VP2", "feed_type": "vehicle_positions", "new_generation": false, "duplicate_delivery": true, "late": false, "pointer_moved": false}
+            ],
+            "lineage_totals": {"generations_built": 4, "duplicate_deliveries": {"vehicle_positions": 1, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": {"label": "VP2", "feed_timestamp": "2026-10-05T12:01:00Z", "metrics_as_of": "2026-10-05T12:01:00Z", "age_s": 0, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "trip_updates": {"label": "TU1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 40, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "alerts": {"label": "ALERTS1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 40, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 0}
+            },
+            "vehicle_metrics": {"R_A": {"fresh": 1, "stale": 0, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicle_generation_metrics": {"R_A": {"fresh": 1, "stale": 0, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicles": {
+              "V1": {"route_id": "R_A", "trip_id": "T1", "class": "fresh", "age_s": 5, "record_kind": "observation", "observation_time": "2026-10-05T12:00:55Z", "event_time": "2026-10-05T12:00:55Z", "latitude": 42.3519, "longitude": -71.0581, "invalid_reason": null, "flags": []},
+              "V3": {"route_id": "R_A", "trip_id": null, "class": "unknown", "age_s": null, "record_kind": "snapshot_state_sample", "observation_time": null, "event_time": "2026-10-05T12:01:00Z", "latitude": 42.35, "longitude": -71.06, "invalid_reason": null, "flags": ["MISSING_OBSERVATION_TIMESTAMP"]}
+            },
+            "vehicle_quality": {"MISSING_OBSERVATION_TIMESTAMP": 1},
+            "history": {
+              "V1": {"rows": 2, "event_times": ["2026-10-05T12:00:10Z", "2026-10-05T12:00:55Z"]},
+              "V2": {"rows": 1, "event_times": ["2026-10-05T11:57:00Z"]},
+              "V3": {"rows": 2, "event_times": ["2026-10-05T12:00:20Z", "2026-10-05T12:01:00Z"]}
+            },
+            "prediction_metrics": {
+              "R_A": {"trip_instances": 2, "eligible": 2, "late": 1, "rate": 0.5, "mean": 210.0, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 2, "stale": false},
+              "R_B": {"trip_instances": 0, "eligible": 0, "late": 0, "rate": null, "mean": null, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 0, "stale": false}
+            },
+            "targets": {
+              "T1": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 3, "stop_id": "S3", "event_type": "arrival", "delay_s": 360, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": true},
+              "T2": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S3", "event_type": "arrival", "delay_s": 60, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": false}
+            },
+            "predictions": [
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:16:00Z", "scheduled_at": "2026-10-05T12:10:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 1, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:00:00Z", "scheduled_at": "2026-10-05T11:58:00Z", "delay_s": 120, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S1", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:13:00Z", "scheduled_at": "2026-10-05T12:12:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"}
+            ],
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A3": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved", "A3": "resolved", "A4": "resolved", "A5": "resolved", "A6": "resolved", "A7": "unresolved", "A8": "resolved"},
+            "alert_quality": {"A6": ["NO_SCOPE_MATCH"], "A7": ["UNRESOLVED_ALERT_SELECTOR"]},
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        },
+        {
+          "step": "S4",
+          "clock": "2026-10-05T12:01:00Z",
+          "inputs": ["VP1"],
+          "expect": {
+            "pointer": {"vehicle_positions": "VP2", "trip_updates": "TU1", "alerts": "ALERTS1"},
+            "deliveries": [
+              {"label": "VP1", "feed_type": "vehicle_positions", "new_generation": false, "duplicate_delivery": true, "late": true, "pointer_moved": false}
+            ],
+            "lineage_totals": {"generations_built": 4, "duplicate_deliveries": {"vehicle_positions": 2, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 1, "trip_updates": 0, "alerts": 0}, "late_labels": ["VP1"]},
+            "feeds": {
+              "vehicle_positions": {"label": "VP2", "feed_timestamp": "2026-10-05T12:01:00Z", "metrics_as_of": "2026-10-05T12:01:00Z", "age_s": 0, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "trip_updates": {"label": "TU1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 40, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "alerts": {"label": "ALERTS1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 40, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 0}
+            },
+            "vehicle_metrics": {"R_A": {"fresh": 1, "stale": 0, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicle_generation_metrics": {"R_A": {"fresh": 1, "stale": 0, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicles": {
+              "V1": {"route_id": "R_A", "trip_id": "T1", "class": "fresh", "age_s": 5, "record_kind": "observation", "observation_time": "2026-10-05T12:00:55Z", "event_time": "2026-10-05T12:00:55Z", "latitude": 42.3519, "longitude": -71.0581, "invalid_reason": null, "flags": []},
+              "V3": {"route_id": "R_A", "trip_id": null, "class": "unknown", "age_s": null, "record_kind": "snapshot_state_sample", "observation_time": null, "event_time": "2026-10-05T12:01:00Z", "latitude": 42.35, "longitude": -71.06, "invalid_reason": null, "flags": ["MISSING_OBSERVATION_TIMESTAMP"]}
+            },
+            "vehicle_quality": {"MISSING_OBSERVATION_TIMESTAMP": 1},
+            "history": {
+              "V1": {"rows": 2, "event_times": ["2026-10-05T12:00:10Z", "2026-10-05T12:00:55Z"]},
+              "V2": {"rows": 1, "event_times": ["2026-10-05T11:57:00Z"]},
+              "V3": {"rows": 2, "event_times": ["2026-10-05T12:00:20Z", "2026-10-05T12:01:00Z"]}
+            },
+            "prediction_metrics": {
+              "R_A": {"trip_instances": 2, "eligible": 2, "late": 1, "rate": 0.5, "mean": 210.0, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 2, "stale": false},
+              "R_B": {"trip_instances": 0, "eligible": 0, "late": 0, "rate": null, "mean": null, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 0, "stale": false}
+            },
+            "targets": {
+              "T1": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 3, "stop_id": "S3", "event_type": "arrival", "delay_s": 360, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": true},
+              "T2": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S3", "event_type": "arrival", "delay_s": 60, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": false}
+            },
+            "predictions": [
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:16:00Z", "scheduled_at": "2026-10-05T12:10:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 1, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:00:00Z", "scheduled_at": "2026-10-05T11:58:00Z", "delay_s": 120, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S1", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:13:00Z", "scheduled_at": "2026-10-05T12:12:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"}
+            ],
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A3": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved", "A3": "resolved", "A4": "resolved", "A5": "resolved", "A6": "resolved", "A7": "unresolved", "A8": "resolved"},
+            "alert_quality": {"A6": ["NO_SCOPE_MATCH"], "A7": ["UNRESOLVED_ALERT_SELECTOR"]},
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        },
+        {
+          "step": "S5",
+          "clock": "2026-10-05T12:03:10Z",
+          "inputs": [],
+          "expect": {
+            "pointer": {"vehicle_positions": "VP2", "trip_updates": "TU1", "alerts": "ALERTS1"},
+            "deliveries": [],
+            "lineage_totals": {"generations_built": 4, "duplicate_deliveries": {"vehicle_positions": 2, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 1, "trip_updates": 0, "alerts": 0}, "late_labels": ["VP1"]},
+            "feeds": {
+              "vehicle_positions": {"label": "VP2", "feed_timestamp": "2026-10-05T12:01:00Z", "metrics_as_of": "2026-10-05T12:01:00Z", "age_s": 130, "stale": true, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "trip_updates": {"label": "TU1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 170, "stale": true, "is_partial": false, "is_empty": false, "source_entity_count": 2, "rejected_entity_count": 0},
+              "alerts": {"label": "ALERTS1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 170, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 0}
+            },
+            "vehicle_metrics": {"R_A": {"fresh": 0, "stale": 1, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicle_generation_metrics": {"R_A": {"fresh": 1, "stale": 0, "unknown": 1, "invalid": 0, "membership": 2}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicles": {
+              "V1": {"route_id": "R_A", "trip_id": "T1", "class": "stale", "age_s": 135, "record_kind": "observation", "observation_time": "2026-10-05T12:00:55Z", "event_time": "2026-10-05T12:00:55Z", "latitude": 42.3519, "longitude": -71.0581, "invalid_reason": null, "flags": []},
+              "V3": {"route_id": "R_A", "trip_id": null, "class": "unknown", "age_s": null, "record_kind": "snapshot_state_sample", "observation_time": null, "event_time": "2026-10-05T12:01:00Z", "latitude": 42.35, "longitude": -71.06, "invalid_reason": null, "flags": ["MISSING_OBSERVATION_TIMESTAMP"]}
+            },
+            "vehicle_quality": {"MISSING_OBSERVATION_TIMESTAMP": 1},
+            "history": {
+              "V1": {"rows": 2, "event_times": ["2026-10-05T12:00:10Z", "2026-10-05T12:00:55Z"]},
+              "V2": {"rows": 1, "event_times": ["2026-10-05T11:57:00Z"]},
+              "V3": {"rows": 2, "event_times": ["2026-10-05T12:00:20Z", "2026-10-05T12:01:00Z"]}
+            },
+            "prediction_metrics": {
+              "R_A": {"trip_instances": 2, "eligible": 2, "late": 1, "rate": 0.5, "mean": 210.0, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 2, "stale": true},
+              "R_B": {"trip_instances": 0, "eligible": 0, "late": 0, "rate": null, "mean": null, "excluded": {}, "excluded_total": 0, "unknown_uncertainty": 0, "stale": true}
+            },
+            "targets": {
+              "T1": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 3, "stop_id": "S3", "event_type": "arrival", "delay_s": 360, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": true},
+              "T2": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S3", "event_type": "arrival", "delay_s": 60, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": false}
+            },
+            "predictions": [
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:16:00Z", "scheduled_at": "2026-10-05T12:10:00Z", "delay_s": 360, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S4", "stop_sequence": 1, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:00:00Z", "scheduled_at": "2026-10-05T11:58:00Z", "delay_s": 120, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S2", "stop_sequence": 3, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:08:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S1", "stop_sequence": 4, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:13:00Z", "scheduled_at": "2026-10-05T12:12:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"}
+            ],
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A3": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved", "A3": "resolved", "A4": "resolved", "A5": "resolved", "A6": "resolved", "A7": "unresolved", "A8": "resolved"},
+            "alert_quality": {"A6": ["NO_SCOPE_MATCH"], "A7": ["UNRESOLVED_ALERT_SELECTOR"]},
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        }
+      ]
+    },
+    "IT06": {
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {
+          "step": "S1",
+          "clock": "2026-10-05T12:00:30Z",
+          "inputs": ["IT06_VP"],
+          "expect": {
+            "pointer": {"vehicle_positions": "IT06_VP", "trip_updates": null, "alerts": null},
+            "deliveries": [
+              {"label": "IT06_VP", "feed_type": "vehicle_positions", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 1, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": {"label": "IT06_VP", "feed_timestamp": "2026-10-05T12:00:30Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 0, "stale": false, "is_partial": true, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 1},
+              "trip_updates": null,
+              "alerts": null
+            },
+            "vehicle_metrics": {"R_A": {"fresh": 2, "stale": 0, "unknown": 1, "invalid": 5, "membership": 7}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicle_generation_metrics": {"R_A": {"fresh": 2, "stale": 0, "unknown": 1, "invalid": 5, "membership": 7}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicles": {
+              "V1": {"route_id": "R_A", "trip_id": "T1", "class": "fresh", "age_s": 20, "record_kind": "observation", "observation_time": "2026-10-05T12:00:10Z", "event_time": "2026-10-05T12:00:10Z", "latitude": 42.3515, "longitude": -71.0585, "invalid_reason": null, "flags": []},
+              "V3": {"route_id": "R_A", "trip_id": null, "class": "unknown", "age_s": null, "record_kind": "snapshot_state_sample", "observation_time": null, "event_time": "2026-10-05T12:00:30Z", "latitude": 42.35, "longitude": -71.06, "invalid_reason": null, "flags": ["MISSING_OBSERVATION_TIMESTAMP"]},
+              "V4": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "INVALID_COORDINATES", "flags": ["INVALID_COORDINATES"]},
+              "V5": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "INVALID_COORDINATES", "flags": ["INVALID_COORDINATES"]},
+              "V6": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "FUTURE_TIMESTAMP", "flags": ["FUTURE_TIMESTAMP"]},
+              "V7": {"route_id": "R_A", "trip_id": null, "class": "fresh", "age_s": 0, "record_kind": "observation", "observation_time": "2026-10-05T12:00:33Z", "event_time": "2026-10-05T12:00:33Z", "latitude": 42.352, "longitude": -71.058, "invalid_reason": null, "flags": ["CLOCK_SKEW"]},
+              "V8": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "INVALID_TIMESTAMP_UNIT", "flags": ["INVALID_TIMESTAMP_UNIT"]}
+            },
+            "vehicle_quality": {"CLOCK_SKEW": 1, "FUTURE_TIMESTAMP": 1, "INVALID_COORDINATES": 2, "INVALID_TIMESTAMP_UNIT": 1, "MISSING_OBSERVATION_TIMESTAMP": 1, "MISSING_VEHICLE_ID": 1},
+            "history": {
+              "V1": {"rows": 1, "event_times": ["2026-10-05T12:00:10Z"]},
+              "V3": {"rows": 1, "event_times": ["2026-10-05T12:00:30Z"]},
+              "V7": {"rows": 1, "event_times": ["2026-10-05T12:00:33Z"]}
+            },
+            "prediction_metrics": null,
+            "targets": null,
+            "predictions": null,
+            "alerts_by_route": null,
+            "alert_selector_resolution": null,
+            "alert_quality": null,
+            "alerts_closed": {},
+            "dlq": {"MISSING_VEHICLE_ID": 1}
+          }
+        },
+        {
+          "step": "S2",
+          "clock": "2026-10-05T12:00:30Z",
+          "inputs": ["IT06_BAD"],
+          "expect": {
+            "pointer": {"vehicle_positions": "IT06_VP", "trip_updates": null, "alerts": null},
+            "deliveries": [],
+            "lineage_totals": {"generations_built": 1, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": {"label": "IT06_VP", "feed_timestamp": "2026-10-05T12:00:30Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 0, "stale": false, "is_partial": true, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 1},
+              "trip_updates": null,
+              "alerts": null
+            },
+            "vehicle_metrics": {"R_A": {"fresh": 2, "stale": 0, "unknown": 1, "invalid": 5, "membership": 7}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicle_generation_metrics": {"R_A": {"fresh": 2, "stale": 0, "unknown": 1, "invalid": 5, "membership": 7}, "R_B": {"fresh": 0, "stale": 0, "unknown": 0, "invalid": 0, "membership": 0}},
+            "vehicles": {
+              "V1": {"route_id": "R_A", "trip_id": "T1", "class": "fresh", "age_s": 20, "record_kind": "observation", "observation_time": "2026-10-05T12:00:10Z", "event_time": "2026-10-05T12:00:10Z", "latitude": 42.3515, "longitude": -71.0585, "invalid_reason": null, "flags": []},
+              "V3": {"route_id": "R_A", "trip_id": null, "class": "unknown", "age_s": null, "record_kind": "snapshot_state_sample", "observation_time": null, "event_time": "2026-10-05T12:00:30Z", "latitude": 42.35, "longitude": -71.06, "invalid_reason": null, "flags": ["MISSING_OBSERVATION_TIMESTAMP"]},
+              "V4": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "INVALID_COORDINATES", "flags": ["INVALID_COORDINATES"]},
+              "V5": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "INVALID_COORDINATES", "flags": ["INVALID_COORDINATES"]},
+              "V6": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "FUTURE_TIMESTAMP", "flags": ["FUTURE_TIMESTAMP"]},
+              "V7": {"route_id": "R_A", "trip_id": null, "class": "fresh", "age_s": 0, "record_kind": "observation", "observation_time": "2026-10-05T12:00:33Z", "event_time": "2026-10-05T12:00:33Z", "latitude": 42.352, "longitude": -71.058, "invalid_reason": null, "flags": ["CLOCK_SKEW"]},
+              "V8": {"route_id": "R_A", "class": "invalid", "age_s": null, "invalid_reason": "INVALID_TIMESTAMP_UNIT", "flags": ["INVALID_TIMESTAMP_UNIT"]}
+            },
+            "vehicle_quality": {"CLOCK_SKEW": 1, "FUTURE_TIMESTAMP": 1, "INVALID_COORDINATES": 2, "INVALID_TIMESTAMP_UNIT": 1, "MISSING_OBSERVATION_TIMESTAMP": 1, "MISSING_VEHICLE_ID": 1},
+            "history": {
+              "V1": {"rows": 1, "event_times": ["2026-10-05T12:00:10Z"]},
+              "V3": {"rows": 1, "event_times": ["2026-10-05T12:00:30Z"]},
+              "V7": {"rows": 1, "event_times": ["2026-10-05T12:00:33Z"]}
+            },
+            "prediction_metrics": null,
+            "targets": null,
+            "predictions": null,
+            "alerts_by_route": null,
+            "alert_selector_resolution": null,
+            "alert_quality": null,
+            "alerts_closed": {},
+            "dlq": {"INVALID_JSON": 1, "MISSING_VEHICLE_ID": 1}
+          }
+        }
+      ]
+    },
+    "IT07": {
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {
+          "step": "S1",
+          "clock": "2026-10-05T12:00:30Z",
+          "inputs": ["IT07_TU"],
+          "expect": {
+            "pointer": {"vehicle_positions": null, "trip_updates": "IT07_TU", "alerts": null},
+            "deliveries": [
+              {"label": "IT07_TU", "feed_type": "trip_updates", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 1, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": null,
+              "trip_updates": {"label": "IT07_TU", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 10, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 3, "rejected_entity_count": 0},
+              "alerts": null
+            },
+            "vehicle_metrics": null,
+            "vehicle_generation_metrics": null,
+            "vehicles": null,
+            "vehicle_quality": null,
+            "history": {},
+            "prediction_metrics": {
+              "R_A": {"trip_instances": 1, "eligible": 0, "late": 0, "rate": null, "mean": null, "excluded": {"AMBIGUOUS_SERVICE_DATE": 1}, "excluded_total": 1, "unknown_uncertainty": 0, "stale": false},
+              "R_B": {"trip_instances": 2, "eligible": 1, "late": 0, "rate": 0.0, "mean": 240.0, "excluded": {"UNRESOLVED_STOP_SEQUENCE": 1}, "excluded_total": 1, "unknown_uncertainty": 1, "stale": false}
+            },
+            "targets": {
+              "T4": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "ambiguous", "resolution_method": null, "service_date": null, "stop_sequence": 1, "stop_id": "S1", "event_type": "departure", "delay_s": null, "uncertainty_class": "unknown_uncertainty", "kpi_reason": "AMBIGUOUS_SERVICE_DATE", "late": null},
+              "T5": {"route_id": "R_B", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S6", "event_type": "arrival", "delay_s": 240, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": false},
+              "T6": {"route_id": "R_B", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 3, "stop_id": "S7", "event_type": "arrival", "delay_s": 60, "uncertainty_class": "unknown_uncertainty", "kpi_reason": "UNRESOLVED_STOP_SEQUENCE", "late": null}
+            },
+            "predictions": [
+              {"trip_id": "T4", "route_id": "R_A", "stop_id": "S1", "stop_sequence": 1, "stop_resolved": true, "event_type": "departure", "predicted_at": "2026-10-05T23:50:00Z", "scheduled_at": null, "delay_s": null, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "ambiguous"},
+              {"trip_id": "T5", "route_id": "R_B", "stop_id": "S6", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 240, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T6", "route_id": "R_B", "stop_id": "S7", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:07:00Z", "scheduled_at": "2026-10-05T12:06:00Z", "delay_s": 60, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T6", "route_id": "R_B", "stop_id": "S5", "stop_sequence": null, "stop_resolved": false, "event_type": "arrival", "predicted_at": "2026-10-05T12:10:00Z", "scheduled_at": null, "delay_s": null, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"}
+            ],
+            "alerts_by_route": null,
+            "alert_selector_resolution": null,
+            "alert_quality": null,
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        }
+      ]
+    },
+    "IT08": {
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {
+          "step": "S1",
+          "clock": "2026-10-05T12:00:30Z",
+          "inputs": ["IT08_TU"],
+          "expect": {
+            "pointer": {"vehicle_positions": null, "trip_updates": "IT08_TU", "alerts": null},
+            "deliveries": [
+              {"label": "IT08_TU", "feed_type": "trip_updates", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 1, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": null,
+              "trip_updates": {"label": "IT08_TU", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 10, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 7, "rejected_entity_count": 0},
+              "alerts": null
+            },
+            "vehicle_metrics": null,
+            "vehicle_generation_metrics": null,
+            "vehicles": null,
+            "vehicle_quality": null,
+            "history": {},
+            "prediction_metrics": {
+              "R_A": {"trip_instances": 3, "eligible": 0, "late": 0, "rate": null, "mean": null, "excluded": {"CANCELED_TRIP": 1, "DEGRADED_PREDICTION": 1, "SCHEDULE_ONLY_PREDICTION": 1}, "excluded_total": 3, "unknown_uncertainty": 0, "stale": false},
+              "R_B": {"trip_instances": 4, "eligible": 2, "late": 1, "rate": 0.5, "mean": 120.0, "excluded": {"ADDED_TRIP": 1, "INVALID_PREDICTION": 1}, "excluded_total": 2, "unknown_uncertainty": 1, "stale": false}
+            },
+            "targets": {
+              "ADDED_1": {"route_id": "R_B", "trip_relationship": "ADDED", "schedule_resolution": "not_applicable", "resolution_method": null, "service_date": null, "stop_sequence": null, "stop_id": null, "event_type": null, "delay_s": null, "uncertainty_class": null, "kpi_reason": "ADDED_TRIP", "late": null},
+              "T1": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 3, "stop_id": "S3", "event_type": "arrival", "delay_s": 360, "uncertainty_class": "degraded", "kpi_reason": "DEGRADED_PREDICTION", "late": null},
+              "T2": {"route_id": "R_A", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S3", "event_type": "arrival", "delay_s": null, "uncertainty_class": "schedule_only", "kpi_reason": "SCHEDULE_ONLY_PREDICTION", "late": null},
+              "T3": {"route_id": "R_A", "trip_relationship": "CANCELED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": null, "stop_id": null, "event_type": null, "delay_s": null, "uncertainty_class": null, "kpi_reason": "CANCELED_TRIP", "late": null},
+              "T5": {"route_id": "R_B", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S6", "event_type": "arrival", "delay_s": null, "uncertainty_class": "invalid", "kpi_reason": "INVALID_PREDICTION", "late": null},
+              "T6": {"route_id": "R_B", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S6", "event_type": "arrival", "delay_s": 300, "uncertainty_class": "unknown_uncertainty", "kpi_reason": null, "late": true},
+              "T7": {"route_id": "R_B", "trip_relationship": "SCHEDULED", "schedule_resolution": "resolved", "resolution_method": "descriptor", "service_date": "2026-10-05", "stop_sequence": 2, "stop_id": "S6", "event_type": "arrival", "delay_s": -60, "uncertainty_class": "realtime", "kpi_reason": null, "late": false}
+            },
+            "predictions": [
+              {"trip_id": "ADDED_1", "route_id": "R_B", "stop_id": "S5", "stop_sequence": null, "stop_resolved": false, "event_type": "arrival", "predicted_at": "2026-10-05T12:04:00Z", "scheduled_at": null, "delay_s": null, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "not_applicable"},
+              {"trip_id": "T1", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 3, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:11:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": 360, "uncertainty": 301, "uncertainty_class": "degraded", "schedule_resolution": "resolved"},
+              {"trip_id": "T2", "route_id": "R_A", "stop_id": "S3", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": null, "uncertainty": 300, "uncertainty_class": "schedule_only", "schedule_resolution": "resolved"},
+              {"trip_id": "T5", "route_id": "R_B", "stop_id": "S6", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:09:00Z", "scheduled_at": "2026-10-05T12:05:00Z", "delay_s": null, "uncertainty": 360, "uncertainty_class": "invalid", "schedule_resolution": "resolved"},
+              {"trip_id": "T6", "route_id": "R_B", "stop_id": "S6", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:08:00Z", "scheduled_at": "2026-10-05T12:03:00Z", "delay_s": 300, "uncertainty": null, "uncertainty_class": "unknown_uncertainty", "schedule_resolution": "resolved"},
+              {"trip_id": "T7", "route_id": "R_B", "stop_id": "S6", "stop_sequence": 2, "stop_resolved": true, "event_type": "arrival", "predicted_at": "2026-10-05T12:06:00Z", "scheduled_at": "2026-10-05T12:07:00Z", "delay_s": -60, "uncertainty": 60, "uncertainty_class": "realtime", "schedule_resolution": "resolved"}
+            ],
+            "alerts_by_route": null,
+            "alert_selector_resolution": null,
+            "alert_quality": null,
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        }
+      ]
+    },
+    "IT09": {
+      "start_clock": "2026-10-05T12:00:30Z",
+      "scope_route_ids": ["R_A", "R_B"],
+      "steps": [
+        {
+          "step": "S1",
+          "clock": "2026-10-05T12:00:30Z",
+          "inputs": ["ALERTS1"],
+          "expect": {
+            "pointer": {"vehicle_positions": null, "trip_updates": null, "alerts": "ALERTS1"},
+            "deliveries": [
+              {"label": "ALERTS1", "feed_type": "alerts", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 1, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": null,
+              "trip_updates": null,
+              "alerts": {"label": "ALERTS1", "feed_timestamp": "2026-10-05T12:00:20Z", "metrics_as_of": "2026-10-05T12:00:30Z", "age_s": 10, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 8, "rejected_entity_count": 0}
+            },
+            "vehicle_metrics": null,
+            "vehicle_generation_metrics": null,
+            "vehicles": null,
+            "vehicle_quality": null,
+            "history": {},
+            "prediction_metrics": null,
+            "targets": null,
+            "predictions": null,
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A3": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved", "A3": "resolved", "A4": "resolved", "A5": "resolved", "A6": "resolved", "A7": "unresolved", "A8": "resolved"},
+            "alert_quality": {"A6": ["NO_SCOPE_MATCH"], "A7": ["UNRESOLVED_ALERT_SELECTOR"]},
+            "alerts_closed": {},
+            "dlq": {}
+          }
+        },
+        {
+          "step": "S2",
+          "clock": "2026-10-05T12:01:00Z",
+          "inputs": ["ALERTS2"],
+          "expect": {
+            "pointer": {"vehicle_positions": null, "trip_updates": null, "alerts": "ALERTS2"},
+            "deliveries": [
+              {"label": "ALERTS2", "feed_type": "alerts", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 2, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": null,
+              "trip_updates": null,
+              "alerts": {"label": "ALERTS2", "feed_timestamp": "2026-10-05T12:01:00Z", "metrics_as_of": "2026-10-05T12:01:00Z", "age_s": 0, "stale": false, "is_partial": false, "is_empty": false, "source_entity_count": 7, "rejected_entity_count": 0}
+            },
+            "vehicle_metrics": null,
+            "vehicle_generation_metrics": null,
+            "vehicles": null,
+            "vehicle_quality": null,
+            "history": {},
+            "prediction_metrics": null,
+            "targets": null,
+            "predictions": null,
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved", "A4": "resolved", "A5": "resolved", "A6": "resolved", "A7": "unresolved", "A8": "resolved"},
+            "alert_quality": {"A6": ["NO_SCOPE_MATCH"], "A7": ["UNRESOLVED_ALERT_SELECTOR"]},
+            "alerts_closed": {
+              "A3": {"closed_reason": "ABSENT_FROM_FULL_SNAPSHOT", "closed_at": "2026-10-05T12:01:00Z", "closed_by": "ALERTS2"}
+            },
+            "dlq": {}
+          }
+        },
+        {
+          "step": "S3",
+          "clock": "2026-10-05T12:02:00Z",
+          "inputs": ["ALERTS3"],
+          "expect": {
+            "pointer": {"vehicle_positions": null, "trip_updates": null, "alerts": "ALERTS3"},
+            "deliveries": [
+              {"label": "ALERTS3", "feed_type": "alerts", "new_generation": true, "duplicate_delivery": false, "late": false, "pointer_moved": true}
+            ],
+            "lineage_totals": {"generations_built": 3, "duplicate_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_deliveries": {"vehicle_positions": 0, "trip_updates": 0, "alerts": 0}, "late_labels": []},
+            "feeds": {
+              "vehicle_positions": null,
+              "trip_updates": null,
+              "alerts": {"label": "ALERTS3", "feed_timestamp": "2026-10-05T12:02:00Z", "metrics_as_of": "2026-10-05T12:02:00Z", "age_s": 0, "stale": false, "is_partial": true, "is_empty": false, "source_entity_count": 3, "rejected_entity_count": 1}
+            },
+            "vehicle_metrics": null,
+            "vehicle_generation_metrics": null,
+            "vehicles": null,
+            "vehicle_quality": null,
+            "history": {},
+            "prediction_metrics": null,
+            "targets": null,
+            "predictions": null,
+            "alerts_by_route": {
+              "R_A": {
+                "A1": {"state": "ACTIVE", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "UNCONFIRMED_INHERITED", "inherited_from": "ALERTS2", "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "UNCONFIRMED_INHERITED", "inherited_from": "ALERTS2", "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "UNCONFIRMED_INHERITED", "inherited_from": "ALERTS2", "first_seen": "ALERTS1"}
+              },
+              "R_B": {
+                "A2": {"state": "UPCOMING", "confirmation": "CONFIRMED", "inherited_from": null, "first_seen": "ALERTS1"},
+                "A4": {"state": "EXPIRED", "confirmation": "UNCONFIRMED_INHERITED", "inherited_from": "ALERTS2", "first_seen": "ALERTS1"},
+                "A5": {"state": "ACTIVE", "confirmation": "UNCONFIRMED_INHERITED", "inherited_from": "ALERTS2", "first_seen": "ALERTS1"},
+                "A8": {"state": "ALWAYS", "confirmation": "UNCONFIRMED_INHERITED", "inherited_from": "ALERTS2", "first_seen": "ALERTS1"}
+              }
+            },
+            "alert_selector_resolution": {"A1": "resolved", "A2": "resolved"},
+            "alert_quality": {"A5": ["INVALID_ENTITY"]},
+            "alerts_closed": {
+              "A3": {"closed_reason": "ABSENT_FROM_FULL_SNAPSHOT", "closed_at": "2026-10-05T12:01:00Z", "closed_by": "ALERTS2"}
+            },
+            "dlq": {"INVALID_ENTITY": 1}
+          }
+        }
+      ]
+    }
+  }
+}

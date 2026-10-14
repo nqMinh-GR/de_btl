@@ -1,0 +1,9 @@
+route_id,service_id,trip_id,trip_headsign,direction_id,shape_id
+R_A,WKDY,T1,Synthetic Stop 4,0,SH_A0
+R_A,WKDY,T2,Synthetic Stop 1,1,SH_A1
+R_A,WKDY,T3,Synthetic Stop 4,0,SH_A0
+R_A,DAILY,T4,Synthetic Stop 4,0,SH_A0
+R_B,WKDY,T5,Synthetic Stop 7,0,SH_B0
+R_B,WKDY,T6,Synthetic Stop 5 loop,0,SH_B1
+R_B,WKDY,T7,Synthetic Stop 7,0,SH_B0
+R_X,WKDY,TX,Synthetic Stop 1,0,SH_X

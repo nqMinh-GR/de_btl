@@ -1,0 +1,75 @@
+# TransitPulse benchmark scenarios (design E §8, spec md §18, PDF p27).
+# Every repetition creates a NEW run. Nothing here is a result: results are written by run_benchmark.py into
+# <TP_WORKDIR>/reports/benchmarks/<bench_id>/ with status MEASURED | PARTIAL | NOT_RUN.
+schema_version: 1
+
+defaults:
+  repetitions: 3
+  warmup_seconds: 60
+  measure_seconds: 120
+  drain_timeout_seconds: 60
+  resource_interval_seconds: 2
+  backlog_interval_seconds: 5
+
+scenarios:
+  replay_1x:
+    kind: replay
+    speed: 1
+    description: Real recording (live capture) replayed at source speed. Requires --recording-manifest.
+  replay_10x:
+    kind: replay
+    speed: 10
+    description: Real recording replayed at 10x. Requires --recording-manifest.
+  replay_50x:
+    kind: replay
+    speed: 50
+    description: Real recording replayed at 50x (a 2 h recording lasts 144 s -> usually PARTIAL). Requires --recording-manifest.
+  stress_100:
+    kind: stress
+    target_rate: 100           # normalized candidate records per second (contracts.accounting.count_candidates)
+    speed: 1
+    seed: 42
+    description: Synthetic stress, 5 routes with replicated static trips, 80/20 TU/VP candidate split.
+  stress_500:
+    kind: stress
+    target_rate: 500
+    speed: 1
+    seed: 42
+    description: Synthetic stress at 500 normalized candidate records/s.
+  stress_1000:
+    kind: stress
+    target_rate: 1000
+    speed: 1
+    seed: 42
+    description: Synthetic stress at 1000 normalized candidate records/s.
+  recovery_partial_write:
+    kind: recovery
+    fault: after_partial_write
+    repetitions: 1
+    description: Processor exits (86) after a partial write of the golden VP2 generation; restart on the same checkpoint.
+  recovery_after_cas:
+    kind: recovery
+    fault: after_cas_before_commit
+    repetitions: 1
+    description: Processor exits (86) after the pointer CAS of VP2 and before the checkpoint commit.
+  recovery_cassandra_down:
+    kind: recovery
+    fault: cassandra_down
+    repetitions: 1
+    description: The owned Cassandra is stopped while VP2 is pending; Cassandra and the processor are restarted.
+  recovery_collector_outbox:
+    kind: recovery
+    fault: collector_outbox
+    repetitions: 1
+    description: Collector with an unreachable broker is SIGKILLed with pending outbox rows, then restarted (simulated source).
+
+# Reference targets: shown in benchmark_report.md in their own table, never as measured values.
+targets:
+  pipeline_visibility_latency_p95:
+    value: 10
+    unit: s
+    scope: baseline replay at recorded source speed on the reference machine (4 CPU, ~16 GiB RAM)
+  stable_at_source_rate:
+    value: true
+    unit: ""
+    scope: replay_1x keeps backlog bounded for the whole recording

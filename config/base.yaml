@@ -1,0 +1,170 @@
+# TransitPulse MBTA — base configuration (all profiles).
+# Values here are PROJECT POLICY defaults, not MBTA SLAs. Every run pins the
+# effective policy into run_metadata.policy_json at creation time.
+project:
+  project_id: transitpulse-mbta
+  pipeline_version: p1            # checkpoint namespace: <checkpoint_root>/<pipeline_version>/<run_id>/<query>
+  policy_version: policy-v1
+  agency_timezone_fallback: null  # never used silently; static loader reads agency.txt
+
+sources:
+  gtfs_static_url: https://cdn.mbta.com/MBTA_GTFS.zip
+  vehicle_positions_url: https://cdn.mbta.com/realtime/VehiclePositions.json
+  trip_updates_url: https://cdn.mbta.com/realtime/TripUpdates.json
+  alerts_url: https://cdn.mbta.com/realtime/Alerts.json
+  user_agent: "TransitPulse-MBTA/0.1 (university course project; non-commercial)"
+
+scope:
+  route_ids: []                   # SELECTED_ROUTE_IDS: verified bus route IDs; required for live (no random fallback)
+  route_type: 3                   # bus
+  max_routes: 10
+  scope_policy_version: scope-v1
+
+collector:
+  poll_interval_seconds:
+    vehicle_positions: 30
+    trip_updates: 30
+    alerts: 30
+  http:
+    connect_timeout_seconds: 5
+    read_timeout_seconds: 20
+    write_timeout_seconds: 5
+    pool_timeout_seconds: 5
+    max_attempts: 3
+    backoff_base_seconds: 1.0
+    backoff_cap_seconds: 10.0
+    retry_after_max_seconds: 300
+    max_response_bytes: 67108864  # 64 MiB streamed cap
+  raw_disk_budget_bytes: 2147483648   # 2 GiB reference budget; fail-stop when exceeded
+  min_free_bytes: 1073741824
+  disk_warning_fraction: 0.8
+  recording_seconds: 7200
+  outbox:
+    max_in_flight: 8
+    keep_published_payload: false
+    retry_backoff_cap_seconds: 30
+  heartbeat_seconds: 15
+
+kafka:
+  bootstrap_servers: "127.0.0.1:9092"
+  topics:
+    vehicle_positions: mbta.vehicle_positions.snapshots.v1
+    trip_updates: mbta.trip_updates.snapshots.v1
+    alerts: mbta.alerts.snapshots.v1
+    control: mbta.control.v1
+    dlq: mbta.dlq.v1
+  partitions: 1
+  replication_factor: 1
+  retention_hours: 6
+  snapshot_retention_bytes: 1073741824   # per partition
+  max_snapshot_bytes: 4194304            # MAX_SNAPSHOT_BYTES: serialized envelope limit (4 MiB)
+  topic_max_message_bytes: 5242880       # broker/topic limit with headroom
+  control_max_message_bytes: 1048576
+  dlq_excerpt_max_chars: 2048
+  producer:
+    enable_idempotence: true
+    acks: all
+    max_in_flight_requests_per_connection: 5
+    message_timeout_ms: 60000
+    linger_ms: 5
+    compression_type: none               # keeps the 4 MiB check equal to wire size
+    message_max_bytes: 5242880
+
+spark:
+  master: "local[2]"
+  app_name: transitpulse-processor
+  trigger_seconds: 5
+  driver_memory: 1536m
+  shuffle_partitions: 4
+  max_partition_fetch_bytes: 8388608
+  fetch_max_bytes: 33554432
+  max_snapshots_per_batch: 3000
+  max_control_events_per_batch: 1000
+  query_name: realtime_main
+  connector_coordinate: "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7"
+  ui_enabled: false
+
+cassandra:
+  hosts: ["127.0.0.1"]
+  port: 9042
+  keyspace: transitpulse
+  local_dc: datacenter1
+  consistency: LOCAL_ONE               # RF1 demo; production needs a different topology
+  serial_consistency: SERIAL
+  connect_timeout_seconds: 5
+  request_timeout_seconds: 20
+  write_concurrency: 32
+  write_buffer_rows: 256
+  parent_read_limit_per_route: 2000
+  parent_read_total_limit: 5000
+
+policy:
+  vehicle_stale_seconds: 120           # VEHICLE_STALE_SECONDS
+  prediction_stale_seconds: 90         # PREDICTION_STALE_SECONDS
+  alert_stale_seconds: 300
+  predicted_late_seconds: 300          # PREDICTED_LATE_SECONDS (demo policy, not MBTA on-time definition)
+  future_tolerance_seconds: 5          # FUTURE_TOLERANCE_SECONDS
+  service_date_inference_window_seconds: 43200
+  uncertainty_policy: mbta_bus_uncertainty_v1
+  target_policy: first_future_resolved_stop_v1
+  timestamp_ms_threshold: 100000000000 # values above this are treated as milliseconds -> INVALID_TIMESTAMP_UNIT
+
+storage:
+  current_generation_ttl_seconds: 3600 # CURRENT_GENERATION_TTL
+  history_ttl_seconds: 259200          # HISTORY_TTL (3 days)
+  min_publish_ttl_seconds: 60
+  pointer_cas_max_attempts: 10
+  raw_deletion_enabled: false
+  geometry_max_points: 5000
+
+api:
+  host: 127.0.0.1
+  port: 8000
+  base_path: /api/v1
+  cors_allow_origins: ["http://127.0.0.1:8501", "http://localhost:8501"]
+  history_max_hours: 24                # API_HISTORY_MAX_HOURS
+  history_default_hours: 1
+  page_size_default: 100
+  page_size_max: 500                   # API_PAGE_SIZE_MAX
+  max_total_rows: 2000
+  max_fanout_routes: 5
+  predictions_limit_default: 50
+  predictions_limit_max: 200
+  request_timeout_seconds: 10
+  statement_timeout_seconds: 2
+  cache_entries: 256
+  cache_max_ttl_seconds: 30
+
+ui:
+  refresh_seconds: 5
+  api_base_url: "http://127.0.0.1:8000/api/v1"
+  http_timeout_seconds: 5
+
+replay:
+  tick_interval_seconds: 1.0
+  max_speed: 100
+  heartbeat_seconds: 5
+  control_poll_seconds: 0.2
+
+synthetic:
+  default_seed: 42
+  route_ids: [R_A, R_B, R_C, R_D, R_E]
+  service_date: "2026-10-05"
+  start_clock: "2026-10-05T12:00:00Z"
+
+paths:
+  workdir: null                        # TP_WORKDIR; profiles provide defaults
+
+runtime:
+  kafka_heap: 512m
+  cassandra_max_heap: 1536M
+  cassandra_max_direct_memory: 512M
+  allow_root_in_demo_vm: false
+  ready_timeout_seconds: 240
+  min_mem_available_bytes: 8589934592  # doctor FAIL threshold (8 GiB) with nothing owned running
+  min_disk_free_bytes: 6442450944      # 6 GiB
+  min_cpus: 2
+
+observability:
+  metrics_export_seconds: 5
+  log_excerpt_chars: 512

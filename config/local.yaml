@@ -1,0 +1,6 @@
+# Profile local-native: the same native runner as Colab, on a Linux workstation.
+profile: local-native
+paths:
+  workdir: ./.runtime
+runtime:
+  allow_root_in_demo_vm: false
