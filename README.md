@@ -1,12 +1,11 @@
 # TransitPulse MBTA
 
 <!-- colab-badge:start -->
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/<OWNER>/<REPO>/blob/main/notebooks/TransitPulse_MBTA_Colab_Demo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nqMinh-GR/de_btl/blob/main/notebooks/TransitPulse_MBTA_Colab_Demo.ipynb)
 <!-- colab-badge:end -->
 
-> `<OWNER>/<REPO>` là placeholder: repository chưa được push. Sau khi push, chạy
-> `python3 scripts/configure_repository.py --repo-url https://github.com/<OWNER>/<REPO>.git` để cập nhật badge và
-> notebook (xem `docs/github_colab.md`).
+Mở notebook trên Colab:
+[TransitPulse_MBTA_Colab_Demo.ipynb](https://colab.research.google.com/github/nqMinh-GR/de_btl/blob/main/notebooks/TransitPulse_MBTA_Colab_Demo.ipynb).
 
 **TransitPulse — MBTA Real-Time Public Transport Monitoring and Predicted Delay Alerts.** Đây là đồ án môn
 Data Management & Data Processing. Hệ thống thu thập dữ liệu xe buýt MBTA (Boston), xử lý qua **Kafka → Spark
