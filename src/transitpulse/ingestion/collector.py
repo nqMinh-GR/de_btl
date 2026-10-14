@@ -439,7 +439,8 @@ class Collector:
             raise ValueError(f"invalid feeds {list(feeds)!r}")
         self.cfg = cfg
         self.paths = paths
-        self.run = run
+        # Named run_record so it does not hide the run() method (a RunRecord is not callable).
+        self.run_record = run
         self.index = index
         self.publish = publish
         self.duration_seconds = duration_seconds
@@ -487,7 +488,7 @@ class Collector:
     # ------------------------------------------------------------------ properties
     @property
     def run_id(self) -> str:
-        return self.run.run_id
+        return self.run_record.run_id
 
     @property
     def stop_reason(self) -> str | None:
@@ -504,8 +505,8 @@ class Collector:
         """Preflight checks, outbox lock, disk budget, poll state, restart reconciliation, producer."""
         if self._opened:
             return
-        check_source_policy(self.run, self.source_urls)
-        check_static_match(self.run, self.index)
+        check_source_policy(self.run_record, self.source_urls)
+        check_static_match(self.run_record, self.index)
         try:
             self.outbox = Outbox(self.paths.outbox_db(self.run_id), run_id=self.run_id,
                                  keep_published_payload=self.cfg.collector.outbox.keep_published_payload)
@@ -727,9 +728,9 @@ class Collector:
             "attempts": res.attempts,
             "attempt_log": [a.to_json() for a in res.attempt_log],
             "collector_version": __version__,
-            "gtfs_version": self.run.gtfs_version,
-            "scope_id": self.run.scope_id,
-            "run_source_type": self.run.source_type,
+            "gtfs_version": self.run_record.gtfs_version,
+            "scope_id": self.run_record.scope_id,
+            "run_source_type": self.run_record.source_type,
         }
 
     def _on_capture(self, feed: str, res: FetchResult) -> None:
@@ -830,9 +831,9 @@ class Collector:
         outbox_state = "rejected"
         if parsed is not None:
             env = envelope_from_capture(
-                run=self.run, feed_type=feed, parsed=parsed, selected=selected, accounting=accounting,
+                run=self.run_record, feed_type=feed, parsed=parsed, selected=selected, accounting=accounting,
                 raw_ref=raw_ref, capture_id=capture_id, fetched_at=fetched_at, source_url=self.source_urls[feed],
-                http=http, scenario_id=getattr(self.run, "scenario_id", None), component=self.component,
+                http=http, scenario_id=getattr(self.run_record, "scenario_id", None), component=self.component,
             )
             snapshot_id = env["snapshot_id"]
             env_bytes = envelope_size(env)
@@ -1070,7 +1071,7 @@ class Collector:
         if extra:
             fields.update(extra)
         self._send_control(control.status_event(control.COLLECTOR_STATUS, run_id=self.run_id,
-                                                source_type=self.run.source_type, component=self.component,
+                                                source_type=self.run_record.source_type, component=self.component,
                                                 version=__version__, fields=fields))
 
     def _next_clock_sequence(self) -> int:
@@ -1081,8 +1082,8 @@ class Collector:
 
     def _source_clock(self) -> datetime:
         clock = utcnow()
-        initial = getattr(self.run, "initial_clock", None)
-        if getattr(self.run, "clock_mode", "wall") == "source" and isinstance(initial, datetime) and initial > clock:
+        initial = getattr(self.run_record, "initial_clock", None)
+        if getattr(self.run_record, "clock_mode", "wall") == "source" and isinstance(initial, datetime) and initial > clock:
             clock = initial
         if self._last_source_clock is not None and self._last_source_clock > clock:
             clock = self._last_source_clock
@@ -1092,16 +1093,16 @@ class Collector:
     def _emit_clock(self, event_type: str, *, reason: str | None = None, run_state: str | None = None) -> None:
         if self.producer is None:
             return
-        source_mode = getattr(self.run, "clock_mode", "wall") == "source"
+        source_mode = getattr(self.run_record, "clock_mode", "wall") == "source"
         clock = self._source_clock()
-        extra: dict[str, Any] = {"clock_mode": getattr(self.run, "clock_mode", None)}
+        extra: dict[str, Any] = {"clock_mode": getattr(self.run_record, "clock_mode", None)}
         if event_type == control.RUN_STARTED:
             extra.update(timeline_start=iso_utc(clock) if source_mode else None,
-                         recording_id=getattr(self.run, "recording_id", None) or self.run_id,
-                         scenario_id=getattr(self.run, "scenario_id", None), scope_id=self.run.scope_id,
-                         gtfs_version=self.run.gtfs_version)
+                         recording_id=getattr(self.run_record, "recording_id", None) or self.run_id,
+                         scenario_id=getattr(self.run_record, "scenario_id", None), scope_id=self.run_record.scope_id,
+                         gtfs_version=self.run_record.gtfs_version)
         try:
-            event = control.clock_event(event_type, run_id=self.run_id, source_type=self.run.source_type,
+            event = control.clock_event(event_type, run_id=self.run_id, source_type=self.run_record.source_type,
                                         clock_sequence=self._next_clock_sequence(), source_clock=clock,
                                         component=self.component, version=__version__,
                                         speed=1.0 if source_mode else None, run_state=run_state, reason=reason,
@@ -1132,7 +1133,7 @@ class Collector:
         }
         if self.producer is not None:
             self._send_control(control.status_event(control.COLLECTOR_HEARTBEAT, run_id=self.run_id,
-                                                    source_type=self.run.source_type, component=self.component,
+                                                    source_type=self.run_record.source_type, component=self.component,
                                                     version=__version__, fields=fields))
         log_event(log, "heartbeat", "ok", "collector heartbeat", level=logging.DEBUG,
                   outbox_pending=fields["outbox_pending"])
@@ -1158,7 +1159,7 @@ class Collector:
             try:
                 self._update_gauges()
                 self._emit_heartbeat()
-                if getattr(self.run, "clock_mode", "wall") == "source":
+                if getattr(self.run_record, "clock_mode", "wall") == "source":
                     self._emit_clock(control.CLOCK_TICK)
             except Exception:
                 log.exception("heartbeat iteration failed")
@@ -1306,7 +1307,7 @@ class Collector:
         item_count = 0
         if self._opened:
             try:
-                path, manifest = finalize_recording(self.cfg, self.paths, self.run, complete=complete)
+                path, manifest = finalize_recording(self.cfg, self.paths, self.run_record, complete=complete)
                 manifest_path, manifest_sha, item_count = str(path), manifest["manifest_sha256"], len(manifest["items"])
             except Exception as exc:
                 log.exception("recording manifest finalization failed")
