@@ -261,3 +261,11 @@ colab-status: venv-check
 
 colab-stop: venv-check
 > $(PY) scripts/demo.py stop --all --profile colab-native --workdir "$(COLAB_WORKDIR)"
+
+# React Frontend commands
+react-dev:
+> cd frontend && npm run dev
+
+react-build:
+> cd frontend && npm run build
+

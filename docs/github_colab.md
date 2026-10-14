@@ -64,26 +64,34 @@ connector JARs); bootstrap mất khoảng 10–15 phút, các lần chạy lại
 | 17 | Export | ZIP + checksum + manifest completeness; tải xuống / copy Drive (tùy chọn) |
 | 18 | Stop | Dừng đúng tiến trình của dự án; giữ dữ liệu; kernel không bị kill |
 
-## 3b. Dashboard web qua Cloudflare Tunnel
+## 3b. Console React qua Cloudflare Tunnel
 
 Với `ENABLE_CLOUDFLARE_TUNNEL = True` (mặc định), sau khi session sẵn sàng, notebook chạy
-`demo.py expose start --target dashboard`. Lệnh này làm ba việc:
-1. Khởi động Streamlit ở `127.0.0.1:8501`. Dashboard gọi FastAPI ở `127.0.0.1:8000`.
-2. Khởi động `cloudflared tunnel --url http://127.0.0.1:8501`, tạo một quick tunnel và đọc URL công khai
+`demo.py expose start --target react` (`TUNNEL_TARGET = "react"`). Lệnh này làm ba việc:
+1. Phục vụ bản build React bằng `vite preview` ở `127.0.0.1:3000`. Trang gọi `/api/v1` trên cùng origin;
+   Vite chuyển tiếp tới FastAPI ở `127.0.0.1:8000`.
+2. Khởi động `cloudflared tunnel --url http://127.0.0.1:3000`, tạo một quick tunnel và đọc URL công khai
    `https://<ngẫu-nhiên>.trycloudflare.com` từ log.
 3. In link để bấm. URL được lưu ở `TP_WORKDIR/runtime/public_urls.json`.
 
+Bootstrap cài Node.js Linux x64 đã ghim rồi `npm ci` và `npm run build` trong `frontend/` với
+`VITE_API_BASE=/api/v1`. `--no-tunnel` chỉ bỏ qua `cloudflared`; bản build UI vẫn được tạo.
+
 Các thao tác khác:
-* `TUNNEL_TARGET = "api"` mở thêm FastAPI (`/api/v1/...`, `/docs`) qua một tunnel riêng; `"both"` mở cả hai.
-* Dashboard và tunnel giữ nguyên khi đổi session hoặc mode, nên link không đổi trong suốt phiên Colab.
-* `demo.py expose status` kiểm tra lại link. `demo.py expose stop` tắt tunnel. `demo.py stop --all` tắt tất cả.
+* `TUNNEL_TARGET = "dashboard"` mở Streamlit ở `127.0.0.1:8501`. `"api"` mở FastAPI (`/api/v1/...`, `/docs`)
+  qua một tunnel riêng. `"both"` mở dashboard và API. `"all"` mở dashboard, API và React.
+* Console, dashboard và tunnel giữ nguyên khi đổi session hoặc mode, nên link không đổi trong suốt phiên Colab.
+* `demo.py expose status` kiểm tra lại link. `demo.py expose stop --target all` tắt mọi link công khai.
+  `demo.py stop --all` tắt tất cả.
 
 Giới hạn:
 * Quick tunnel không cần tài khoản Cloudflare và không có cam kết uptime.
 * Mỗi lần tạo lại tunnel thì URL đổi.
-* Link là công khai: ai có link đều xem được dashboard. Dashboard chỉ đọc, không có secret.
+* Link là công khai, không đăng nhập: ai có link đều xem được console chỉ đọc. Tile bản đồ do trình duyệt
+  khách tải từ OpenStreetMap/CARTO.
 
 `cloudflared` được pin ở phiên bản 2026.10.0 và kiểm tra SHA-256 theo release notes chính thức.
+Node.js được pin ở phiên bản 22.21.0 và kiểm tra SHA-256 theo `SHASUMS256.txt` chính thức.
 
 ## 4. Khi một cell lỗi
 

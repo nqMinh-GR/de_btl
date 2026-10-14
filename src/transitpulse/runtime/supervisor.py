@@ -46,20 +46,20 @@ from transitpulse.runtime.util import atomic_write_json, iso_now, read_json_or_n
 log = logging.getLogger("transitpulse.runtime.supervisor")
 
 COMPONENTS: tuple[str, ...] = ("kafka", "cassandra", "processor", "publisher", "collector", "api", "dashboard",
-                                "tunnel", "tunnel-api")
+                                "react", "tunnel", "tunnel-api", "tunnel-react")
 INFRA_COMPONENTS: tuple[str, ...] = ("kafka", "cassandra")
 APP_COMPONENTS: tuple[str, ...] = ("processor", "publisher", "collector", "api")
-# Scope "access": the dashboard and the public quick tunnels outlive demo sessions (stable public URL).
-ACCESS_COMPONENTS: tuple[str, ...] = ("dashboard", "tunnel", "tunnel-api")
+# Scope "access": consoles and public quick tunnels outlive demo sessions (stable public URL).
+ACCESS_COMPONENTS: tuple[str, ...] = ("dashboard", "react", "tunnel", "tunnel-api", "tunnel-react")
 GRACEFUL_TIMEOUTS: dict[str, float] = {
     "kafka": 60.0, "cassandra": 60.0, "processor": 90.0, "publisher": 30.0, "collector": 30.0,
-    "api": 10.0, "dashboard": 10.0, "tunnel": 15.0, "tunnel-api": 15.0,
+    "api": 10.0, "dashboard": 10.0, "react": 10.0, "tunnel": 15.0, "tunnel-api": 15.0, "tunnel-react": 15.0,
 }
 # Expected RSS budget per component (design D §9); spawn gate = budget + RESERVE of MemAvailable.
 SPAWN_BUDGET_BYTES: dict[str, int] = {
     "kafka": int(1.0 * GIB), "cassandra": int(2.6 * GIB), "processor": int(2.8 * GIB),
     "api": int(0.3 * GIB), "publisher": int(0.2 * GIB), "collector": int(0.2 * GIB), "dashboard": int(0.3 * GIB),
-    "tunnel": int(0.1 * GIB), "tunnel-api": int(0.1 * GIB),
+    "react": int(0.4 * GIB), "tunnel": int(0.1 * GIB), "tunnel-api": int(0.1 * GIB), "tunnel-react": int(0.1 * GIB),
 }
 SPAWN_RESERVE_BYTES = 1 * GIB
 OWNER_PLACEHOLDER = "@OWNER_TOKEN@"
@@ -83,7 +83,7 @@ def conflict_hint(component: str, workdir: Any = None) -> str:
         return f"stop everything first: {_w(workdir, 'scripts/demo.py stop --all')}, then start again"
     if component in ACCESS_COMPONENTS or component == "api":
         return (f"the API/dashboard/tunnels outlive sessions: stop them with "
-                f"{_w(workdir, 'scripts/demo.py expose stop --target both')} (then "
+                f"{_w(workdir, 'scripts/demo.py expose stop --target all')} (then "
                 f"{_w(workdir, 'scripts/demo.py stop')} for the API) or {_w(workdir, 'scripts/demo.py stop --all')}, "
                 "then start again")
     return f"stop the current session first: {_w(workdir, 'scripts/demo.py stop')}, then start again"

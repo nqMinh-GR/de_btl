@@ -9,8 +9,8 @@ Mở notebook trên Colab:
 
 **TransitPulse — MBTA Real-Time Public Transport Monitoring and Predicted Delay Alerts.** Đây là đồ án môn
 Data Management & Data Processing. Hệ thống thu thập dữ liệu xe buýt MBTA (Boston), xử lý qua **Kafka → Spark
-Structured Streaming → Cassandra**, rồi phục vụ qua **FastAPI** cho dashboard Streamlit (local) và giao diện
-notebook (Google Colab). Trọng tâm của dự án là dữ liệu đúng, có phiên bản, có kiểm soát chất lượng và có thể
+Structured Streaming → Cassandra**, rồi phục vụ qua **FastAPI** cho console React, dashboard Streamlit (local)
+và giao diện notebook (Google Colab). Trọng tâm của dự án là dữ liệu đúng, có phiên bản, có kiểm soát chất lượng và có thể
 phục hồi; giao diện chỉ là nơi người dùng xem kết quả đã xử lý.
 
 Tài liệu đặc tả gốc nằm cùng thư mục:
@@ -54,6 +54,7 @@ flowchart TD
   S --> H["Curated Parquet"]
   DB --> A["FastAPI /api/v1"]
   A --> U["Streamlit (local)"]
+  A --> R["React console (local / Colab)"]
   A --> N["Notebook UI (Colab)"]
 ```
 
@@ -83,7 +84,7 @@ flowchart TD
 | Message broker | Apache Kafka 4.2.2 (KRaft, 1 node) |
 | Serving database | Apache Cassandra 5.0.9 (1 node, RF1) |
 | API | FastAPI 0.142.2, Pydantic 2.13.5, uvicorn 0.54.0 |
-| UI | Notebook widgets (Colab), Streamlit 1.65.0 + PyDeck 0.9.3 (local) |
+| UI | Console React + MapLibre (local và link Colab), notebook widgets (Colab), Streamlit 1.65.0 + PyDeck 0.9.3 |
 
 ## Quickstart A — Google Colab: chỉ cần Run All (khuyến nghị)
 
@@ -97,14 +98,15 @@ Sau đó, mỗi lần demo:
 2. Chọn **Runtime → Run all**. Không cần sửa gì: mặc định là `DEMO_MODE = "synthetic"` và
    `ENABLE_CLOUDFLARE_TUNNEL = True`. Notebook sẽ lần lượt:
    * clone đúng commit;
-   * bootstrap: tải uv, Python 3.11, JDK 17, Kafka, Cassandra, PySpark, connector và `cloudflared`, mất khoảng
-     10–15 phút ở lần đầu;
+   * bootstrap: tải uv, Python 3.11, JDK 17, Kafka, Cassandra, PySpark, connector, Node.js đã ghim, build console
+     React và `cloudflared`, mất khoảng 10–15 phút ở lần đầu;
    * khởi động Kafka và Cassandra;
    * chạy golden smoke;
    * bắt đầu session;
    * hiển thị giao diện 5 tab trong notebook;
-   * mở **dashboard web qua Cloudflare Tunnel** và in ra link công khai `https://….trycloudflare.com`. Bấm link
-     để dùng dashboard Streamlit trên trình duyệt; DNS có thể mất tới khoảng một phút.
+   * mở **console React qua Cloudflare Tunnel** và in ra link công khai `https://….trycloudflare.com`. Bấm link
+     để dùng bản đồ đường phố và các màn chỉ đọc trên trình duyệt; DNS có thể mất tới khoảng một phút.
+     `TUNNEL_TARGET = "dashboard"` vẫn mở Streamlit nếu cần.
 3. Cell 17 xuất evidence ZIP. Nếu `uv.lock` được sinh trên Colab, hãy commit file này vào repository.
 4. Cell 18 (hoặc nút Stop) dừng đúng các tiến trình của dự án và giữ nguyên dữ liệu. Tunnel có nút tắt riêng.
 
@@ -116,9 +118,10 @@ màu đỏ rồi vẫn chạy tiếp để demo và link vẫn có. Đặt `STRI
 bước FAIL.
 
 > **Lưu ý bảo mật:** link Cloudflare quick tunnel là công khai, không có đăng nhập. Ai có link đều xem được
-> dashboard trong lúc session chạy. Dashboard chỉ đọc và dữ liệu là dữ liệu công khai của MBTA hoặc dữ liệu
-> synthetic. Đặt `ENABLE_CLOUDFLARE_TUNNEL = False` nếu không muốn mở ra Internet; giao diện trong notebook
-> vẫn dùng được.
+> console React trong lúc session chạy. Console chỉ đọc; API nằm trong VM và được trang gọi qua cùng origin.
+> Dữ liệu là dữ liệu công khai của MBTA hoặc dữ liệu synthetic. Tile bản đồ do trình duyệt khách tải từ
+> OpenStreetMap/CARTO. Đặt `ENABLE_CLOUDFLARE_TUNNEL = False` nếu không muốn mở ra Internet; giao diện trong
+> notebook vẫn dùng được.
 
 Chế độ khác: `DEMO_MODE="live"` với `ROUTE_IDS` là 5 tuyến bus đã xác minh, hoặc `DEMO_MODE="replay"` với
 `RECORDING_MANIFEST` trỏ tới một recording có sẵn. Notebook không tự đổi chế độ khi nguồn lỗi.
@@ -135,6 +138,7 @@ bash scripts/bootstrap_colab.sh --workdir "$TP_WORKDIR" --profile local-native
     --duration-seconds 600 --detach --workdir "$TP_WORKDIR"
 .venv/bin/python scripts/demo.py status --profile local-native --workdir "$TP_WORKDIR"
 .venv/bin/streamlit run app/streamlit_app.py --server.address 127.0.0.1 --server.port 8501   # cần extra "dashboard"
+make react-dev   # console React tại http://127.0.0.1:3000, proxy /api tới FastAPI :8000
 .venv/bin/python scripts/demo.py stop --all --profile local-native --workdir "$TP_WORKDIR"
 ```
 Lệnh tương đương qua Makefile: `make doctor`, `make infra-up`, `make init`, `make source-check`, `make list-routes`,
@@ -173,6 +177,7 @@ Oracle độc lập nằm ở `tests/oracle/` và chỉ dùng thư viện chuẩ
 | `src/transitpulse/api/` | FastAPI `/api/v1` |
 | `src/transitpulse/runtime/` | Native runner: bootstrap, supervisor, Kafka/Cassandra native, CLI demo/infra/export |
 | `app/` | Streamlit + PyDeck |
+| `frontend/` | Console React + MapLibre (chỉ gọi HTTP) |
 | `notebooks/` | Notebook Colab và `colab_ui.py` (frontend chỉ gọi HTTP) |
 | `scripts/` | `bootstrap_colab.sh`, `doctor.py`, `infra.py`, `demo.py`, `export_artifacts.py`, … |
 | `config/` | `base.yaml` và các override `local.yaml` / `colab.yaml` / `docker.yaml` |

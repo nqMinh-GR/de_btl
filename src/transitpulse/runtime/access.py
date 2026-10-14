@@ -1,12 +1,15 @@
-"""Public access from Colab: the Streamlit dashboard and Cloudflare quick tunnels (supervisor scope "access").
+"""Public access from Colab: Streamlit, the React console, and Cloudflare quick tunnels (supervisor scope "access").
 
-    demo.py expose start|status|stop [--target dashboard|api|both] [--ready-timeout 120]
+    demo.py expose start|status|stop [--target dashboard|api|react|both|all] [--ready-timeout 120]
 
 * ``dashboard``: ``streamlit run app/streamlit_app.py`` bound to 127.0.0.1:8501 (cwd ``app/`` so its
   ``.streamlit/config.toml`` applies; every relevant setting is also passed explicitly). Readiness:
   ``GET http://127.0.0.1:8501/_stcore/health`` returns ``ok``.
-* ``tunnel`` / ``tunnel-api``: ``cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8501`` (or :8000 for
-  the API). cloudflared logs to stderr (captured in ``W/logs/<component>/stdout.log``); readiness = a
+* ``react``: ``vite preview`` of ``frontend/dist`` on 127.0.0.1:3000. The preview server proxies ``/api`` to
+  the local FastAPI process, so one public origin serves the console and the read-only API. Readiness:
+  ``GET http://127.0.0.1:3000/`` returns 200.
+* ``tunnel`` / ``tunnel-api`` / ``tunnel-react``: ``cloudflared tunnel --no-autoupdate --url`` the matching
+  local origin. cloudflared logs to stderr (captured in ``W/logs/<component>/stdout.log``); readiness = a
   ``https://<words>.trycloudflare.com`` URL appears in THIS incarnation's part of the log (byte offset recorded
   at spawn). Reachability of the public URL is probed best effort (DNS propagation can lag; not fatal).
 * The access components outlive demo sessions: the public URL stays stable for the Colab VM's lifetime and
@@ -24,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import re
 import time
 import urllib.error
@@ -47,13 +51,16 @@ log = logging.getLogger("transitpulse.runtime.access")
 
 DASHBOARD_HOST = "127.0.0.1"
 DASHBOARD_PORT = 8501
+REACT_HOST = "127.0.0.1"
+REACT_PORT = 3000
 TUNNEL_URL_RE = re.compile(r"https://([a-z0-9-]+)\.trycloudflare\.com\b")
 NON_TUNNEL_HOSTS = frozenset({"api", "www"})
-TUNNEL_COMPONENT = {"dashboard": "tunnel", "api": "tunnel-api"}
-ALL_TARGETS: tuple[str, ...] = ("dashboard", "api")
-SECURITY_NOTE = ("Quick tunnel: anyone with the random URL can open the read-only dashboard (no authentication). "
-                 "Data is public MBTA data or synthetic test data. The tunnel ends with the Colab session or "
-                 "`demo.py expose stop`.")
+TUNNEL_COMPONENT = {"dashboard": "tunnel", "api": "tunnel-api", "react": "tunnel-react"}
+ALL_TARGETS: tuple[str, ...] = ("dashboard", "api", "react")
+SECURITY_NOTE = ("Quick tunnel: anyone with the random URL can open the read-only console (no authentication). "
+                 "Data is public MBTA data or synthetic test data. The React target proxies /api/v1 on the same "
+                 "origin; the API is a separate public URL only with --target api. The tunnel ends with the "
+                 "Colab session or `demo.py expose stop`.")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -96,9 +103,12 @@ def decide_expose(entry: dict[str, Any] | None, *, alive: bool) -> str:
 def targets_of(target: str) -> list[str]:
     if target == "both":
         return ["dashboard", "api"]
-    if target in ("dashboard", "api"):
+    if target == "all":
+        return ["dashboard", "api", "react"]
+    if target in ("dashboard", "api", "react"):
         return [target]
-    raise CliError("USAGE", f"unknown --target {target!r}", hint="dashboard | api | both", exit_code=EXIT_USAGE)
+    raise CliError("USAGE", f"unknown --target {target!r}", hint="dashboard | api | react | both | all",
+                   exit_code=EXIT_USAGE)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -151,9 +161,71 @@ def dashboard_view(sup: Supervisor, entry: dict[str, Any] | None, *, reused: Any
             "reused": reused, "alive": alive}
 
 
+def react_local_url() -> str:
+    return f"http://{REACT_HOST}:{REACT_PORT}"
+
+
+def _frontend_paths(ctx: Ctx) -> tuple[dict[str, Any], Path]:
+    runtime = ctx.require_runtime()
+    frontend = runtime.raw.get("frontend") if isinstance(runtime.raw.get("frontend"), dict) else None
+    node = Path(str((frontend or {}).get("node") or ""))
+    if frontend is None or not node.is_file():
+        raise CliError("FRONTEND_NODE_MISSING", "Node.js for the React console is not installed",
+                       hint=f"re-run `bash scripts/bootstrap_colab.sh --workdir {ctx.paths.root}` (step B6N)",
+                       exit_code=EXIT_UNSUPPORTED)
+    if not frontend.get("built"):
+        raise CliError("FRONTEND_NOT_BUILT", "frontend/dist is missing or the Vite build failed",
+                       hint="re-run bootstrap so step B6F can run npm ci && npm run build",
+                       exit_code=EXIT_UNSUPPORTED)
+    vite = ctx.repo_dir / "frontend" / "node_modules" / "vite" / "bin" / "vite.js"
+    if not vite.is_file():
+        raise CliError("FRONTEND_NOT_BUILT", f"{vite} not found",
+                       hint="re-run bootstrap step B6F", exit_code=EXIT_UNSUPPORTED)
+    return frontend, vite
+
+
+def react_argv(ctx: Ctx) -> list[str]:
+    frontend, vite = _frontend_paths(ctx)
+    return [str(frontend["node"]), str(vite), "preview", "--host", REACT_HOST, "--port", str(REACT_PORT),
+            "--strictPort"]
+
+
+def ensure_react(ctx: Ctx, sup: Supervisor, *, ready_timeout: float) -> dict[str, Any]:
+    from transitpulse.runtime.cli_demo import core_env
+
+    frontend, _vite = _frontend_paths(ctx)
+    node_bin = str(Path(frontend["node"]).parent)
+    env = {**core_env(ctx), "PATH": f"{node_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+           "VITE_API_BASE": "/api/v1"}
+
+    def ready() -> bool:
+        status, _body = http_get(react_local_url() + "/", timeout=3.0)
+        return status == 200
+
+    alive = sup.entry("react")
+    if alive and sup.is_alive("react") and ready():
+        return react_view(sup, alive, reused=True)
+    entry = sup.start("react", react_argv(ctx), env=env, scope="access", ports=(REACT_PORT,), ready=ready,
+                      ready_timeout=ready_timeout, fingerprint_extra=f"node={frontend.get('version')}",
+                      min_mem_available_bytes=spawn_gate_bytes("react"), graceful_timeout=10.0,
+                      cwd=ctx.repo_dir / "frontend")
+    return react_view(sup, entry, reused=entry.get("reused"))
+
+
+def react_view(sup: Supervisor, entry: dict[str, Any] | None, *, reused: Any = None) -> dict[str, Any]:
+    if not entry:
+        return {"state": "NOT_RUNNING", "local_url": react_local_url(), "pid": None, "log": None, "reused": None}
+    alive = sup.is_alive("react")
+    return {"state": entry.get("state") if alive else "EXITED", "local_url": react_local_url(),
+            "pid": entry.get("pid"), "wrapper_pid": entry.get("wrapper_pid"), "log": entry.get("stdout_log"),
+            "reused": reused, "alive": alive}
+
+
 def tunnel_origin(ctx: Ctx, target: str) -> str:
     if target == "dashboard":
         return dashboard_local_url()
+    if target == "react":
+        return react_local_url()
     return f"http://127.0.0.1:{ctx.cfg.api.port}"
 
 
@@ -263,9 +335,10 @@ def public_urls_path(ctx: Ctx) -> Path:
     return ctx.paths.runtime_dir / "public_urls.json"
 
 
-def write_public_urls(ctx: Ctx, dashboard: dict[str, Any], tunnels: list[dict[str, Any]]) -> Path:
+def write_public_urls(ctx: Ctx, dashboard: dict[str, Any], react: dict[str, Any],
+                      tunnels: list[dict[str, Any]]) -> Path:
     path = public_urls_path(ctx)
-    atomic_write_json(path, {"updated_at": iso_now(), "dashboard": dashboard, "tunnels": tunnels,
+    atomic_write_json(path, {"updated_at": iso_now(), "dashboard": dashboard, "react": react, "tunnels": tunnels,
                              "security_note": SECURITY_NOTE})
     return path
 
@@ -279,7 +352,8 @@ def read_public_urls(ctx: Ctx, sup: Supervisor) -> dict[str, Any]:
         alive = bool(comp) and sup.is_alive(comp)
         out.append({"target": t.get("target"), "public_url": t.get("public_url") if alive else None,
                     "alive": alive, "reachable": t.get("reachable") if alive else False})
-    return {"dashboard": {"local_url": dashboard_local_url(), "alive": sup.is_alive("dashboard")}, "tunnels": out,
+    return {"dashboard": {"local_url": dashboard_local_url(), "alive": sup.is_alive("dashboard")},
+            "react": {"local_url": react_local_url(), "alive": sup.is_alive("react")}, "tunnels": out,
             "file": str(public_urls_path(ctx)) if data else None}
 
 
@@ -299,8 +373,9 @@ def cmd_expose(ctx: Ctx, args: argparse.Namespace) -> Result:
     views = {t: tunnel_view(ctx, sup, t, probe=t in targets) for t in ALL_TARGETS}
     tunnels = [views[t] for t in targets]
     dashboard = dashboard_view(sup, sup.entry("dashboard"))
-    write_public_urls(ctx, dashboard, [views[t] for t in ALL_TARGETS])
-    return Result({"op": "status", "target": args.target, "dashboard": dashboard, "tunnels": tunnels,
+    react = react_view(sup, sup.entry("react"))
+    write_public_urls(ctx, dashboard, react, [views[t] for t in ALL_TARGETS])
+    return Result({"op": "status", "target": args.target, "dashboard": dashboard, "react": react, "tunnels": tunnels,
                    "warnings": [], "public_urls_file": str(public_urls_path(ctx)), "security_note": SECURITY_NOTE})
 
 
@@ -321,25 +396,30 @@ def _expose_start(ctx: Ctx, sup: Supervisor, targets: list[str], args: argparse.
             warnings.append("infra/API not running: the dashboard shows 'unavailable' until `infra.py start/init` "
                             "and `demo.py start`")
     dashboard: dict[str, Any] = dashboard_view(sup, sup.entry("dashboard"))
+    react: dict[str, Any] = react_view(sup, sup.entry("react"))
     tunnels: list[dict[str, Any]] = []
     if "dashboard" in targets:
         dashboard = ensure_dashboard(ctx, sup, ready_timeout=timeout)
         tunnels.append(ensure_tunnel(ctx, sup, "dashboard", ready_timeout=min(timeout, 90.0)))
     if "api" in targets:
         tunnels.append(ensure_tunnel(ctx, sup, "api", ready_timeout=min(timeout, 90.0)))
+    if "react" in targets:
+        react = ensure_react(ctx, sup, ready_timeout=timeout)
+        tunnels.append(ensure_tunnel(ctx, sup, "react", ready_timeout=min(timeout, 90.0)))
     for t in tunnels:
         if not t["reachable"]:
             warnings.append(f"{t['public_url']} is not reachable yet (quick-tunnel DNS can take a minute); "
                             "re-check with `demo.py expose status`")
-    # The file always describes BOTH targets (an `--target api` start must not drop the dashboard URL).
+    # The file always describes every target (an `--target api` start must not drop the other URLs).
     started = {t["target"]: t for t in tunnels}
-    path = write_public_urls(ctx, dashboard, [started.get(t) or tunnel_view(ctx, sup, t, probe=False)
-                                              for t in ALL_TARGETS])
+    path = write_public_urls(ctx, dashboard, react, [started.get(t) or tunnel_view(ctx, sup, t, probe=False)
+                                                     for t in ALL_TARGETS])
     reused = all(bool(t.get("reused")) for t in tunnels) and \
-        ("dashboard" not in targets or bool(dashboard.get("reused")))
+        ("dashboard" not in targets or bool(dashboard.get("reused"))) and \
+        ("react" not in targets or bool(react.get("reused")))
     return Result({"op": "start", "target": "+".join(targets) if len(targets) > 1 else targets[0], "reused": reused,
-                   "dashboard": dashboard, "tunnels": tunnels, "warnings": warnings, "public_urls_file": str(path),
-                   "security_note": SECURITY_NOTE})
+                   "dashboard": dashboard, "react": react, "tunnels": tunnels, "warnings": warnings,
+                   "public_urls_file": str(path), "security_note": SECURITY_NOTE})
 
 
 def _expose_stop(ctx: Ctx, sup: Supervisor, targets: list[str]) -> Result:
@@ -348,16 +428,20 @@ def _expose_stop(ctx: Ctx, sup: Supervisor, targets: list[str]) -> Result:
         stopped[TUNNEL_COMPONENT[t]] = sup.stop(TUNNEL_COMPONENT[t])
     if "dashboard" in targets:
         stopped["dashboard"] = sup.stop("dashboard")
+    if "react" in targets:
+        stopped["react"] = sup.stop("react")
     tunnels = [tunnel_view(ctx, sup, t, probe=False) for t in ALL_TARGETS]
     dashboard = dashboard_view(sup, sup.entry("dashboard"))
-    write_public_urls(ctx, dashboard, tunnels)
+    react = react_view(sup, sup.entry("react"))
+    write_public_urls(ctx, dashboard, react, tunnels)
     return Result({"op": "stop", "target": "+".join(targets), "stopped": stopped, "dashboard": dashboard,
-                   "tunnels": tunnels, "warnings": [], "public_urls_file": str(public_urls_path(ctx))})
+                   "react": react, "tunnels": tunnels, "warnings": [],
+                   "public_urls_file": str(public_urls_path(ctx))})
 
 
 def stop_access(sup: Supervisor) -> dict[str, Any]:
-    """Used by ``demo.py stop --all``: tunnels first, then the dashboard."""
-    return {c: sup.stop(c) for c in ("tunnel", "tunnel-api", "dashboard")}
+    """Used by ``demo.py stop --all``: tunnels first, then the consoles."""
+    return {c: sup.stop(c) for c in ("tunnel", "tunnel-api", "tunnel-react", "dashboard", "react")}
 
 
 __all__ = ["cmd_expose", "parse_tunnel_url", "decide_expose", "read_log_since", "stop_access", "read_public_urls",

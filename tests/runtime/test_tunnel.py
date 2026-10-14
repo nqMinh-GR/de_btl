@@ -57,7 +57,9 @@ def test_expose_start_or_reuse_decision() -> None:
 
 def test_targets() -> None:
     assert targets_of("dashboard") == ["dashboard"]
+    assert targets_of("react") == ["react"]
     assert targets_of("both") == ["dashboard", "api"]
+    assert targets_of("all") == ["dashboard", "api", "react"]
     with pytest.raises(CliError):
         targets_of("everything")
 

@@ -31,7 +31,7 @@ from transitpulse.runtime.proc import GIB, ProcFS, cgroup_memory_limit, cpu_coun
 from transitpulse.runtime.util import atomic_write_json, git_info, iso_now, read_json_or_none, sha256_file
 
 PORTS: dict[int, str] = {9092: "kafka", 9093: "kafka-controller", 9042: "cassandra-cql", 7000: "cassandra-storage",
-                         7199: "cassandra-jmx", 8000: "api", 8501: "dashboard"}
+                         7199: "cassandra-jmx", 8000: "api", 8501: "dashboard", 3000: "react"}
 MEM_TOTAL_FAIL = 10 * GIB
 MEM_AVAILABLE_FAIL = 8 * GIB
 DISK_FAIL = 6 * GIB
@@ -215,6 +215,28 @@ def run_doctor(args: argparse.Namespace) -> Result:
                                 {"path": str(cf), "version_output": (out or "missing").splitlines()[0]},
                                 f"cloudflared {tunnel.get('version')}",
                                 None if ok else f"re-run {boot} (step B6T), or add --no-tunnel to skip the tunnel"))
+        frontend = raw.get("frontend") if isinstance(raw.get("frontend"), dict) else None
+        if not frontend or not frontend.get("node"):
+            checks.append(check("react_console", "INFO", "Node.js was not installed (bootstrap step B6N failed)",
+                                None, f"re-run {boot} with network access to nodejs.org"))
+        else:
+            node = Path(str(frontend.get("node")))
+            out = None
+            if node.is_file():
+                try:
+                    r = subprocess.run([str(node), "--version"], capture_output=True, text=True, timeout=30,
+                                       stdin=subprocess.DEVNULL, check=False,
+                                       env={"PATH": "/usr/bin:/bin", "HOME": str(paths.tmp)})
+                    out = ((r.stdout or "") + (r.stderr or "")).strip()
+                except (OSError, subprocess.TimeoutExpired):
+                    out = None
+            built = bool(frontend.get("built")) and (ctx.repo_dir / "frontend" / "dist" / "index.html").is_file()
+            ok = bool(out) and str(frontend.get("version")) in str(out).lstrip("v") and built
+            checks.append(check("react_console", "PASS" if ok else "FAIL",
+                                {"node": str(node), "version_output": (out or "missing").splitlines()[0],
+                                 "built": built},
+                                f"node {frontend.get('version')} and frontend/dist",
+                                None if ok else f"re-run {boot} (steps B6N and B6F)"))
         report = read_json_or_none(paths.bootstrap_report) or {}
         checks.append(check("bootstrap_report", "PASS" if report.get("overall") == "PASS" else "FAIL",
                             report.get("overall"), "PASS"))

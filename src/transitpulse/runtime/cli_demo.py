@@ -14,7 +14,7 @@
     demo.py golden-smoke [--timeout-seconds 900]
     demo.py lineage  [--run-id R] [--feed vehicle_positions] [--snapshot-id S]
     demo.py benchmark --scenario S [--max-seconds N] [--recording-manifest P] [--repetitions N]
-    demo.py expose   start|status|stop [--target dashboard|api|both] [--ready-timeout 120]
+    demo.py expose   start|status|stop [--target dashboard|api|react|both|all] [--ready-timeout 120]
                      (Streamlit dashboard + Cloudflare quick tunnel; see runtime/access.py)
 
 Start order (spec §24.6): infra must be READY and initialized -> inputs (synth-generate / verify / static load)
@@ -88,8 +88,8 @@ PROCESSOR_DRAIN_GRACE = 90.0
 INPUT_DEADLINE_BACKSTOP = 60.0
 CONTROL_COMMANDS = ("pause", "resume", "step", "advance-clock", "inject", "finish")
 INJECT_SCENARIOS = ("duplicate_snapshot", "late_snapshot", "invalid_gps", "restart_processor")
-LOG_COMPONENTS = ("processor", "publisher", "collector", "api", "kafka", "cassandra", "dashboard", "tunnel",
-                  "tunnel-api", "bootstrap")
+LOG_COMPONENTS = ("processor", "publisher", "collector", "api", "kafka", "cassandra", "dashboard", "react",
+                  "tunnel", "tunnel-api", "tunnel-react", "bootstrap")
 FEEDS = ("vehicle_positions", "trip_updates", "alerts")
 
 
@@ -1197,10 +1197,11 @@ def build_parser() -> JsonArgumentParser:
     s.add_argument("--run-id", default=None)
     s.add_argument("--feed", default="vehicle_positions", choices=list(FEEDS))
     s.add_argument("--snapshot-id", default=None)
-    s = new("expose", "public access: Streamlit dashboard + Cloudflare quick tunnel (start|status|stop)")
+    s = new("expose", "public access: Streamlit, React console, Cloudflare quick tunnel (start|status|stop)")
     s.add_argument("op", choices=["start", "status", "stop"])
-    s.add_argument("--target", default="dashboard", choices=["dashboard", "api", "both"],
-                   help="dashboard (default) tunnels http://127.0.0.1:8501; api tunnels http://127.0.0.1:8000")
+    s.add_argument("--target", default="dashboard", choices=["dashboard", "api", "react", "both", "all"],
+                   help="dashboard tunnels :8501; react tunnels the Vite preview on :3000; api tunnels :8000; "
+                        "both = dashboard+api; all = dashboard+api+react")
     s.add_argument("--ready-timeout", type=float, default=120.0)
     s = new("benchmark", "run a bounded benchmark scenario on separate runs (delegates to benchmarks/)")
     s.add_argument("--scenario", required=True)

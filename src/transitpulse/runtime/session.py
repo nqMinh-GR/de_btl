@@ -32,8 +32,10 @@ LOG_FILES: dict[str, dict[str, str]] = {
     "collector": {"stdout": "stdout.log"},
     "api": {"stdout": "stdout.log"},
     "dashboard": {"stdout": "stdout.log"},
+    "react": {"stdout": "stdout.log"},
     "tunnel": {"stdout": "stdout.log"},
     "tunnel-api": {"stdout": "stdout.log"},
+    "tunnel-react": {"stdout": "stdout.log"},
     "bootstrap": {"stdout": "uv.log", "uv": "uv.log", "spark_probe": "spark_probe.log"},
 }
 

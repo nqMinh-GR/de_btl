@@ -97,6 +97,28 @@
       "probe": ["cloudflared", "--version"],
       "expect": "2026.10.0",
       "status": "PINNED"
+    },
+    {
+      "id": "node",
+      "version": "22.21.0",
+      "type": "tar.gz",
+      "top_dir": "node-v22.21.0-linux-x64",
+      "purpose": "Node.js used to build and preview the React console (Colab and local-native bootstrap)",
+      "urls": [
+        "https://nodejs.org/dist/v22.21.0/node-v22.21.0-linux-x64.tar.gz",
+        "https://nodejs.org/download/release/v22.21.0/node-v22.21.0-linux-x64.tar.gz"
+      ],
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "262b84b02f7e2bc017d4bdb81fec85ca0d6190a5cd0781d2d6e84317c08871f8",
+        "official_source": "https://nodejs.org/dist/v22.21.0/SHASUMS256.txt",
+        "format": "sha256sum",
+        "pinned_on": "2026-10-14"
+      },
+      "install_to": "tools/node",
+      "expect_file": "bin/node",
+      "expect": "v22.21.0",
+      "status": "PINNED"
     }
   ],
   "pyspark": {"version": "3.5.7", "scala": "2.12", "distribution": "pypi-sdist", "pinned_in": "pyproject.toml (==) and uv.lock"},

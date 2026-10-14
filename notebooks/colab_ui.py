@@ -955,9 +955,9 @@ def show_failure_summary(workdir: Any, where: str = "") -> List[Dict[str, Any]]:
     return failed_steps(workdir)
 
 
-def expose_stop(runtime: Dict[str, Any], *, target: str = "both",
+def expose_stop(runtime: Dict[str, Any], *, target: str = "all",
                 show: bool = True) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
-    """``demo.py expose stop --target both``: close every public access component (dashboard + API tunnels).
+    """``demo.py expose stop --target all``: close every public access component (dashboard, React, API).
 
     Does not need cloudflared. Never raises: returns (json, error_text, error_code) and records ``tunnel_stop``
     (PASS / FAIL, or NOT_RUN when the tunnel was disabled at bootstrap).
@@ -3027,12 +3027,13 @@ class FaultLab(object):
 # ================================================================================================
 # Public link through a Cloudflare quick tunnel (cell 14) — demo.py expose start|status|stop
 # ================================================================================================
-TUNNEL_TARGETS = ("dashboard", "api", "both")
+TUNNEL_TARGETS = ("dashboard", "api", "react", "both", "all")
 TUNNEL_SECURITY_NOTE = (
-    "Link công khai, chỉ đọc, không có đăng nhập: bất kỳ ai có link đều xem được dashboard (và API nếu "
-    "TUNNEL_TARGET là api/both) chừng nào session còn chạy. Chỉ chia sẻ khi chấp nhận công khai; tắt bằng nút "
-    "'Tắt tunnel' hoặc 'Dừng tất cả' ở cell 18 (hoặc demo.py expose stop --target both). Link không được ghi vào "
-    "report."
+    "Link công khai, chỉ đọc, không có đăng nhập: bất kỳ ai có link đều xem được console (React mặc định; "
+    "Streamlit nếu TUNNEL_TARGET là dashboard; API nếu là api/both/all) chừng nào session còn chạy. "
+    "Console React gọi /api/v1 trên cùng origin, API không thành URL công khai riêng. Chỉ chia sẻ khi chấp nhận "
+    "công khai; tắt bằng nút 'Tắt tunnel' hoặc 'Dừng tất cả' ở cell 18 (hoặc demo.py expose stop --target all). "
+    "Link không được ghi vào report. Tile bản đồ do trình duyệt khách tải từ OpenStreetMap/CARTO."
 )
 
 
@@ -3077,6 +3078,12 @@ def render_tunnel(doc: Any, *, error: Optional[str] = None, error_code: Optional
             parts.append("<div>Dashboard trong VM: <code>%s</code> · trạng thái %s%s%s</div>"
                          % (esc(dash.get("local_url")), status_badge(dash.get("state")), alive,
                             " · tái sử dụng" if dash.get("reused") else ""))
+        react = doc.get("react") if isinstance(doc, dict) and isinstance(doc.get("react"), dict) else {}
+        if react:
+            alive = "" if react.get("alive") is not False else " " + status_badge("STOPPED")
+            parts.append("<div>React console trong VM: <code>%s</code> · trạng thái %s%s%s</div>"
+                         % (esc(react.get("local_url")), status_badge(react.get("state")), alive,
+                            " · tái sử dụng" if react.get("reused") else ""))
         tunnels = [t for t in (doc.get("tunnels") or []) if isinstance(t, dict)]
         if not tunnels and error is None:
             parts.append(_note("warn", "CLI không trả về tunnel nào", esc("Xem log của demo.py expose.")))
@@ -3120,7 +3127,8 @@ class TunnelPanel(object):
 
     def __init__(self, runtime: Dict[str, Any], target: str = "dashboard") -> None:
         if target not in TUNNEL_TARGETS:
-            raise CellFailed("INVALID_TUNNEL_TARGET", "TUNNEL_TARGET phải là dashboard | api | both (đang là %r)." % target)
+            raise CellFailed("INVALID_TUNNEL_TARGET",
+                             "TUNNEL_TARGET phải là dashboard | api | react | both | all (đang là %r)." % target)
         self.runtime = runtime
         self.target = target
         self.last: Optional[Dict[str, Any]] = None
@@ -3241,8 +3249,8 @@ class TunnelPanel(object):
 # ================================================================================================
 class StopPanel(object):
     """Buttons: demo.py stop (session only; API, dashboard and tunnel stay up), demo.py stop --all (everything,
-    incl. Kafka, Cassandra, dashboard and tunnel) and demo.py expose stop --target both (all public access
-    only). Data is kept."""
+    incl. Kafka, Cassandra, dashboard, React and tunnel) and demo.py expose stop --target all (all public
+    access only). Data is kept."""
 
     def __init__(self, runtime: Dict[str, Any]) -> None:
         self.runtime = runtime
@@ -3274,11 +3282,11 @@ class StopPanel(object):
         return doc
 
     def stop_tunnel(self) -> Optional[Dict[str, Any]]:
-        """Close every public access component (demo.py expose stop --target both: dashboard AND API tunnels);
-        the session and the notebook UI keep running. Failures are recorded and shown in red."""
-        doc, error, _code = expose_stop(self.runtime, target="both", show=True)
+        """Close every public access component (demo.py expose stop --target all).
+        The session and the notebook UI keep running. Failures are recorded and shown in red."""
+        doc, error, _code = expose_stop(self.runtime, target="all", show=True)
         if error is None:
-            print("Đã đóng mọi link công khai (dashboard và API).")
+            print("Đã đóng mọi link công khai (React, dashboard và API).")
         return doc
 
     def _handler(self, action: str) -> Callable:
@@ -3303,9 +3311,9 @@ class StopPanel(object):
         _activate("stop", self)
         intro = ("<h4>Dừng demo</h4><div class='tp-muted'>'Dừng session' (demo.py stop): dừng publisher → chờ "
                  "processor xử lý hết backlog → dừng processor; API, dashboard và tunnel vẫn chạy (link công khai "
-                 "vẫn mở, hiển thị dữ liệu cuối). 'Tắt tunnel' (demo.py expose stop --target both): chỉ đóng mọi thành phần truy "
-                 "cập công khai. 'Dừng tất cả' (demo.py stop --all): dừng mọi thứ kể cả Kafka, Cassandra, API, "
-                 "dashboard và tunnel. Không xóa dữ liệu, checkpoint hay inputs; kernel không bị dừng.</div>")
+                 "vẫn mở, hiển thị dữ liệu cuối). 'Tắt tunnel' (demo.py expose stop --target all): chỉ đóng mọi thành phần truy "
+                 "cập công khai, gồm console React. 'Dừng tất cả' (demo.py stop --all): dừng mọi thứ kể cả Kafka, Cassandra, API, "
+                 "dashboard, React và tunnel. Không xóa dữ liệu, checkpoint hay inputs; kernel không bị dừng.</div>")
         if widgets is None or display is None:
             show_html(intro + _note("info", "Không có ipywidgets",
                                     esc("Gọi panel.stop(), panel.stop(True) hoặc panel.stop_tunnel() trong một cell.")))
@@ -3314,7 +3322,7 @@ class StopPanel(object):
         b_session = W.Button(description="Dừng session (giữ Kafka/Cassandra)", button_style="warning",
                              layout=W.Layout(width="auto"))
         b_tunnel = W.Button(description="Tắt tunnel", button_style="info", layout=W.Layout(width="auto"),
-                            tooltip="demo.py expose stop --target both — đóng mọi link công khai (dashboard và API)")
+                            tooltip="demo.py expose stop --target all — đóng mọi link công khai (React, dashboard và API)")
         b_all = W.Button(description="Dừng tất cả", button_style="danger", layout=W.Layout(width="auto"))
         b_session.on_click(self._handler("session"))
         b_tunnel.on_click(self._handler("tunnel"))

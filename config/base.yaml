@@ -121,7 +121,7 @@ api:
   host: 127.0.0.1
   port: 8000
   base_path: /api/v1
-  cors_allow_origins: ["http://127.0.0.1:8501", "http://localhost:8501"]
+  cors_allow_origins: ["http://127.0.0.1:8501", "http://localhost:8501", "http://127.0.0.1:3000", "http://localhost:3000"]
   history_max_hours: 24                # API_HISTORY_MAX_HOURS
   history_default_hours: 1
   page_size_default: 100

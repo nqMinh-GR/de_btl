@@ -352,6 +352,8 @@ def test_request_id_is_echoed_or_generated(client: TestClient) -> None:
 def test_cors_allowlist(client: TestClient) -> None:
     allowed = client.get(f"{BASE}/health/live", headers={"Origin": "http://localhost:8501"})
     assert allowed.headers["access-control-allow-origin"] == "http://localhost:8501"
+    react = client.get(f"{BASE}/health/live", headers={"Origin": "http://localhost:3000"})
+    assert react.headers["access-control-allow-origin"] == "http://localhost:3000"
     denied = client.get(f"{BASE}/health/live", headers={"Origin": "http://evil.example"})
     assert "access-control-allow-origin" not in denied.headers
     preflight = client.options(

@@ -310,7 +310,9 @@ def export(args: argparse.Namespace) -> Result:
     for comp, files in (("processor", ("stdout.log",)), ("publisher", ("stdout.log",)), ("collector", ("stdout.log",)),
                         ("api", ("stdout.log",)), ("kafka", ("server.log", "stdout.log")),
                         ("cassandra", ("system.log",)), ("bootstrap", ("uv.log", "spark_probe.log")),
-                        ("dashboard", ("stdout.log",)), ("tunnel", ("stdout.log",)), ("tunnel-api", ("stdout.log",))):
+                        ("dashboard", ("stdout.log",)), ("react", ("stdout.log",)),
+                        ("tunnel", ("stdout.log",)), ("tunnel-api", ("stdout.log",)),
+                        ("tunnel-react", ("stdout.log",))):
         for name in files:
             p = paths.log_dir(comp) / name
             if p.is_file():

@@ -55,8 +55,8 @@ log = logging.getLogger("transitpulse.runtime.bootstrap")
 
 SYSTEM_PATH = ("/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin")
 NETWORK_HOSTS = ("https://github.com/", "https://api.adoptium.net/", "https://downloads.apache.org/",
-                 "https://archive.apache.org/", "https://repo1.maven.org/maven2/")
-REPORT_PORTS = (9092, 9093, 9042, 7000, 7199, 8000)
+                 "https://archive.apache.org/", "https://repo1.maven.org/maven2/", "https://nodejs.org/")
+REPORT_PORTS = (9092, 9093, 9042, 7000, 7199, 8000, 3000)
 DASHBOARD_MODULES = ("streamlit", "pydeck")
 CORE_MODULES = ("pyspark", "py4j", "confluent_kafka", "cassandra", "fastapi", "uvicorn", "pydantic", "httpx",
                 "yaml", "psutil", "prometheus_client", "transitpulse")
@@ -366,6 +366,68 @@ def step_tunnel(entry: dict, paths: WorkPaths, args: argparse.Namespace, report:
     return detail
 
 
+def step_node(entry: dict, paths: WorkPaths, args: argparse.Namespace, report: Report) -> dict:
+    """Pinned Node.js distribution used to build and preview the React console."""
+    res = install_artifact(entry, paths, offline=args.offline, strict=args.strict, progress=log.info)
+    for warning in res.warnings:
+        report.warn(warning)
+    node = res.home / "bin" / "node"
+    npm = res.home / "bin" / "npm"
+    if not node.is_file() or not npm.is_file():
+        raise StepFailed("NODE_INCOMPLETE", f"{node} or {npm} missing after install", exit_code=EXIT_ARTIFACT)
+    env = {"PATH": f"{res.home / 'bin'}:/usr/bin:/bin", "HOME": str(paths.tmp), "LANG": "C.UTF-8"}
+    probed = _run([str(node), "--version"], env, paths.root, 60)
+    text = ((probed.stdout or "") + (probed.stderr or "")).strip()
+    expect = str(entry.get("expect") or f"v{entry['version']}")
+    if probed.returncode != 0 or expect not in text:
+        raise StepFailed("NODE_PROBE_FAILED", f"{node} --version did not report {expect}: {text[:300]}",
+                         exit_code=EXIT_ARTIFACT)
+    detail = res.to_json()
+    detail["version_output"] = text.splitlines()[0] if text else None
+    report.data["artifacts"].append(detail)
+    return {"node": str(node), "npm": str(npm), "version": entry["version"], "home": str(res.home)}
+
+
+def step_frontend(repo_dir: Path, paths: WorkPaths, node_info: dict, args: argparse.Namespace, report: Report) -> dict:
+    """``npm ci`` and ``vite build`` with a relative API base. Skips when dist still matches the lockfile."""
+    frontend = repo_dir / "frontend"
+    lock = frontend / "package-lock.json"
+    if not lock.is_file():
+        raise StepFailed("FRONTEND_MISSING", f"{lock} not found", exit_code=EXIT_ARTIFACT)
+    lock_sha = sha256_file(lock)
+    dist = frontend / "dist"
+    index = dist / "index.html"
+    stamp_path = dist / ".tp-build.json"
+    previous = read_json_or_none(stamp_path)
+    if (index.is_file() and isinstance(previous, dict) and previous.get("lock_sha256") == lock_sha
+            and previous.get("vite_api_base") == "/api/v1"):
+        return {"status": "REUSED", "dist": str(dist), "lock_sha256": lock_sha}
+    if args.offline:
+        raise StepFailed("FRONTEND_OFFLINE", "frontend/dist is missing or stale and --offline was given",
+                         hint="run bootstrap once with network access so npm ci can install frontend dependencies",
+                         exit_code=EXIT_ARTIFACT)
+    cache = paths.root / "cache" / "npm"
+    cache.mkdir(parents=True, exist_ok=True)
+    env = {
+        "PATH": f"{Path(node_info['home']) / 'bin'}:/usr/bin:/bin",
+        "HOME": str(paths.tmp),
+        "LANG": "C.UTF-8",
+        "CI": "1",
+        "npm_config_cache": str(cache),
+        "npm_config_update_notifier": "false",
+    }
+    installed = _run([node_info["npm"], "ci", "--no-audit", "--no-fund"], env, frontend, 900)
+    if installed.returncode != 0:
+        tail = ((installed.stderr or "") + (installed.stdout or ""))[-800:]
+        raise StepFailed("FRONTEND_INSTALL_FAILED", f"npm ci failed: {tail}", exit_code=EXIT_ARTIFACT)
+    built = _run([node_info["npm"], "run", "build"], {**env, "VITE_API_BASE": "/api/v1"}, frontend, 900)
+    if built.returncode != 0 or not index.is_file():
+        tail = ((built.stderr or "") + (built.stdout or ""))[-800:]
+        raise StepFailed("FRONTEND_BUILD_FAILED", f"vite build failed: {tail}", exit_code=EXIT_ARTIFACT)
+    atomic_write_json(stamp_path, {"lock_sha256": lock_sha, "vite_api_base": "/api/v1", "built_at": iso_now()})
+    return {"status": "BUILT", "dist": str(dist), "lock_sha256": lock_sha}
+
+
 def step_configs(repo_dir: Path, paths: WorkPaths, cfg: Any, cassandra_home: Path) -> dict:
     from transitpulse.runtime.configs import ConfigRenderError, materialize
 
@@ -511,6 +573,31 @@ def prepare(args: argparse.Namespace) -> Result:
                     report.warn(f"cloudflared {'CHECKSUM MISMATCH' if mismatch else 'install failed'} "
                                 f"({exc.code}: {exc.message}); the public tunnel (demo.py expose) is disabled. "
                                 "Nothing unverified was installed.")
+            node_e = artifact_entry(manifest, "node")
+            try:
+                node_info = report.step("B6N", "Node.js (React console)",
+                                        lambda: step_node(node_e, paths, args, report))
+            except (StepFailed, ArtifactError) as exc:
+                if args.strict:
+                    raise
+                report.data["frontend"] = None
+                report.warn(f"Node.js install failed ({exc.code}: {exc.message}); the React console will not build. "
+                            "Kafka, Cassandra and the API are unaffected.")
+                node_info = None
+            if node_info is not None:
+                try:
+                    built = report.step("B6F", "React console (npm ci + vite build)",
+                                        lambda: step_frontend(repo_dir, paths, node_info, args, report))
+                    report.data["frontend"] = {
+                        **node_info, **built, "local_url": "http://127.0.0.1:3000", "built": True,
+                    }
+                except (StepFailed, ArtifactError) as exc:
+                    if args.strict:
+                        raise
+                    report.data["frontend"] = {**node_info, "local_url": "http://127.0.0.1:3000", "built": False,
+                                               "dist": str(repo_dir / "frontend" / "dist")}
+                    report.warn(f"React build failed ({exc.code}: {exc.message}); demo.py expose --target react "
+                                "stays unavailable until bootstrap succeeds at step B6F.")
             java_home = Path(jdk["home"])
             spark_home = Path(venv["spark_home"])
             core_python = repo_dir / ".venv" / "bin" / "python"
@@ -544,6 +631,7 @@ def prepare(args: argparse.Namespace) -> Result:
                           "connector_coordinate": manifest["spark_connector"]["coordinate"]},
                 "api": {"base_url": f"http://127.0.0.1:{cfg.api.port}{cfg.api.base_path}"},
                 "dashboard": {"local_url": "http://127.0.0.1:8501", "app": str(repo_dir / "app" / "streamlit_app.py")},
+                "frontend": report.data.get("frontend"),
                 "tunnel": ({"cloudflared": report.data["tunnel"]["cloudflared"],
                             "version": report.data["tunnel"]["version"]} if report.data.get("tunnel") else None),
                 "paths": {"workdir": str(paths.root), "conf": str(paths.conf), "kafka_data": str(paths.kafka_data),
@@ -576,6 +664,7 @@ def prepare(args: argparse.Namespace) -> Result:
                 "kafka": kaf_e["version"], "cassandra": cas_e["version"], "spark": manifest["pyspark"]["version"],
                 "scala": (probes.get("spark_cached_launch") or {}).get("scala_version"),
                 "cloudflared": (report.data.get("tunnel") or {}).get("version"),
+                "node": (report.data.get("frontend") or {}).get("version"),
                 "streamlit": venv["modules"].get("streamlit"),
                 "pyspark_module": venv["modules"].get("pyspark"),
                 "confluent_kafka": venv["modules"].get("confluent_kafka"),
