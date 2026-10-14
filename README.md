@@ -13,29 +13,21 @@ Structured Streaming → Cassandra**, rồi phục vụ qua **FastAPI** cho cons
 và giao diện notebook (Google Colab). Trọng tâm của dự án là dữ liệu đúng, có phiên bản, có kiểm soát chất lượng và có thể
 phục hồi; giao diện chỉ là nơi người dùng xem kết quả đã xử lý.
 
-Tài liệu đặc tả gốc nằm cùng thư mục:
-[`system design full.pdf`](system%20design%20full.pdf) (thiết kế hệ thống) và
-[`TransitPulse_MBTA_Full_Build_Prompt_GitHub_Colab_VI.md`](TransitPulse_MBTA_Full_Build_Prompt_GitHub_Colab_VI.md) (yêu cầu xây dựng).
+## Đã chạy end-to-end trên Google Colab
 
-## Trạng thái kiểm chứng (đọc trước)
+Pipeline native đã chạy trọn trên một VM Colab high-RAM (khoảng 51 GB): bootstrap, Kafka, Cassandra, Spark,
+collector live, FastAPI, giao diện notebook và console React. Demo mặc định là **live**, phạm vi **10 tuyến bus**
+MBTA (`1`, `15`, `22`, `23`, `28`, `32`, `39`, `57`, `66`, `77`).
 
-Mã nguồn được viết **mà không chạy bất kỳ lệnh nào** trên máy phát triển, theo yêu cầu. Vì vậy, tại thời điểm
-bàn giao:
-
-| Hạng mục | Trạng thái |
+| Hạng mục | Kết quả |
 |---|---|
-| Unit tests, Spark tests | NOT_RUN |
-| Native full-stack (Kafka + Spark + Cassandra + API) trên Linux | NOT_RUN |
-| Docker Compose (profile `local-docker`) | NOT_RUN — máy build không có quyền Docker daemon |
-| Managed Google Colab Run All | NOT_VERIFIED — lần chạy đầu tiên sẽ là trên Colab |
-| Live MBTA capture / replay recording thật | NOT_RUN — chưa có recording trong repository |
-| Golden smoke (synthetic) | NOT_RUN |
-| Benchmark | Chưa đo — các con số trong tài liệu là **mục tiêu**, không phải kết quả |
-| `uv.lock` | Chưa có — được sinh ở lần bootstrap đầu tiên trên Colab |
-
-Lần đầu chạy trên Colab có thể gặp lỗi. Mỗi cell của notebook dừng lại khi gặp lỗi và in mã lỗi, gợi ý và đoạn
-log để sửa. `reports/environment_verification.json` ghi trạng thái từng hạng mục và chỉ đổi sang PASS khi có
-bằng chứng.
+| Bootstrap native (Python 3.11.17, JDK 17, Kafka 4.2.2, Cassandra 5.0.9, PySpark 3.5.7) | Chạy xong trên Colab |
+| Kafka + Cassandra + Spark driver 16g (profile `colab-native`) | Sẵn sàng; collector poll MBTA mỗi 30 giây |
+| Session live, API `/api/v1`, UI notebook 5 tab | Chạy; tab Bản đồ tự lấy vị trí xe mỗi 5 giây |
+| Lineage (`demo.py lineage`) | Truy được manifest → Kafka → batch → API |
+| Console React qua Cloudflare Tunnel | Link `https://….trycloudflare.com` mở được khi session còn chạy |
+| Golden smoke, unit/Spark tests | Có trong notebook (`RUN_GOLDEN_SMOKE`, `RUN_UNIT_TESTS`); số đo benchmark vẫn là mục tiêu, chưa phải SLA |
+| Docker Compose (`local-docker`) | Đã viết; đường chạy đã kiểm là native trên Colab, không phải Docker |
 
 ## Kiến trúc
 
@@ -44,17 +36,17 @@ flowchart TD
   G["GTFS Static ZIP"] --> L["Static loader (Spark batch)"]
   L --> D["Parquet dimensions"]
   F["MBTA realtime JSON"] --> C["Collector + durable outbox"]
-  C --> R["Raw archive"]
-  R --> P["Replay / synthetic publisher"]
+  C --> RAW["Raw archive"]
+  RAW --> Pub["Replay / synthetic publisher"]
   C --> K["Kafka"]
-  P --> K
+  Pub --> K
   D --> S["Spark Structured Streaming"]
   K --> S
   S --> DB["Cassandra READY generations + pointer"]
   S --> H["Curated Parquet"]
   DB --> A["FastAPI /api/v1"]
   A --> U["Streamlit (local)"]
-  A --> R["React console (local / Colab)"]
+  A --> RC["React console (local / Colab)"]
   A --> N["Notebook UI (Colab)"]
 ```
 
@@ -65,10 +57,10 @@ flowchart TD
   * Service Alerts: https://cdn.mbta.com/realtime/Alerts.json
   * Dữ liệu thuộc Massachusetts Bay Transportation Authority. Hãy xem điều kiện sử dụng của MBTA trước khi phân
     phối recording.
-* **Phạm vi MVP:**
-  * 5 tuyến bus (`route_type=3`), được xác minh từ GTFS và một mẫu realtime.
+* **Phạm vi demo đã chạy:**
+  * 10 tuyến bus (`route_type=3`) đã có trong GTFS MBTA: `1`, `15`, `22`, `23`, `28`, `32`, `39`, `57`, `66`, `77`.
   * Mỗi run dùng một GTFS version bất biến.
-  * Có ba chế độ chạy: `live`, `replay` và `synthetic`.
+  * Có ba chế độ chạy: `live` (mặc định của notebook), `replay` và `synthetic`.
 * **Bảo đảm xử lý:** at-least-once, ghi và publish idempotent. API chỉ đọc các generation đã `READY` qua con trỏ
   CAS (`docs/publish_protocol.md`).
 * **Chỉ số:**
@@ -86,36 +78,25 @@ flowchart TD
 | API | FastAPI 0.142.2, Pydantic 2.13.5, uvicorn 0.54.0 |
 | UI | Console React + MapLibre (local và link Colab), notebook widgets (Colab), Streamlit 1.65.0 + PyDeck 0.9.3 |
 
-## Quickstart A — Google Colab: chỉ cần Run All (khuyến nghị)
+## Quickstart A — Google Colab: Run All (đã chạy xong trên VM high-RAM)
 
-Làm **một lần** trên máy local:
-1. Push repository lên GitHub dưới dạng public. Xem `docs/github_colab.md`.
-2. Chạy `python3 scripts/configure_repository.py --repo-url https://github.com/<OWNER>/<REPO>.git` để ghi URL vào
-   badge và notebook, rồi commit và push. Script chỉ dùng thư viện chuẩn, không cần `.venv`.
+Repository public: https://github.com/nqMinh-GR/de_btl. Badge ở đầu trang mở đúng notebook trên `main`.
 
-Sau đó, mỗi lần demo:
-1. Bấm badge **Open in Colab** ở đầu trang.
-2. Chọn **Runtime → Run all**. Không cần sửa gì: mặc định là `DEMO_MODE = "synthetic"` và
-   `ENABLE_CLOUDFLARE_TUNNEL = True`. Notebook sẽ lần lượt:
-   * clone đúng commit;
-   * bootstrap: tải uv, Python 3.11, JDK 17, Kafka, Cassandra, PySpark, connector, Node.js đã ghim, build console
-     React và `cloudflared`, mất khoảng 10–15 phút ở lần đầu;
-   * khởi động Kafka và Cassandra;
-   * chạy golden smoke;
-   * bắt đầu session;
-   * hiển thị giao diện 5 tab trong notebook;
-   * mở **console React qua Cloudflare Tunnel** và in ra link công khai `https://….trycloudflare.com`. Bấm link
-     để dùng bản đồ đường phố và các màn chỉ đọc trên trình duyệt; DNS có thể mất tới khoảng một phút.
-     `TUNNEL_TARGET = "dashboard"` vẫn mở Streamlit nếu cần.
-3. Cell 17 xuất evidence ZIP. Nếu `uv.lock` được sinh trên Colab, hãy commit file này vào repository.
-4. Cell 18 (hoặc nút Stop) dừng đúng các tiến trình của dự án và giữ nguyên dữ liệu. Tunnel có nút tắt riêng.
+Mỗi lần demo:
+1. Bấm badge **Open in Colab**. Chọn runtime high-RAM. **Runtime → Run all**.
+2. Notebook mặc định `DEMO_MODE = "live"`, `REFRESH_REF = True`, `ENABLE_CLOUDFLARE_TUNNEL = True`,
+   `TUNNEL_TARGET = "react"`, và 10 `ROUTE_IDS` ở trên. Nó lần lượt:
+   * fetch và checkout `main`;
+   * bootstrap (lần đầu khoảng 10–15 phút; lần sau dùng cache);
+   * khởi động Kafka (heap 1g) và Cassandra (heap 4G, direct 2G);
+   * chạy golden smoke và unit tests nếu hai cờ đó còn `True`;
+   * start session live, đợi generation READY và API;
+   * hiện 5 tab, tab Bản đồ tự cập nhật vị trí mỗi 5 giây;
+   * in link console React `https://….trycloudflare.com`.
+3. Cell export ghi evidence ZIP. Cell Stop dừng tiến trình của dự án và giữ dữ liệu.
 
-Ở lần Run All đầu tiên, Colab hiện hộp thoại một lần "Notebook này không do Google tạo". Chọn **Run anyway**.
-Nếu bỏ qua bước 2, notebook sẽ hỏi URL repo đúng một lần trong lúc Run All.
-
-Notebook ghi lại kết quả các bước kiểm thử (unit tests, golden smoke). Khi một bước **FAIL**, notebook hiện cảnh báo
-màu đỏ rồi vẫn chạy tiếp để demo và link vẫn có. Đặt `STRICT_RUN_ALL = True` nếu muốn Run All dừng ở cuối khi có
-bước FAIL.
+Lần đầu Colab hỏi "Notebook này không do Google tạo" — chọn **Run anyway**. `REFRESH_REF = True` cần working
+tree sạch và không có session đang chạy; nếu vừa push, mở lại notebook từ GitHub rồi chạy từ cell tham số.
 
 > **Lưu ý bảo mật:** link Cloudflare quick tunnel là công khai, không có đăng nhập. Ai có link đều xem được
 > console React trong lúc session chạy. Console chỉ đọc; API nằm trong VM và được trang gọi qua cùng origin.
@@ -123,8 +104,8 @@ bước FAIL.
 > OpenStreetMap/CARTO. Đặt `ENABLE_CLOUDFLARE_TUNNEL = False` nếu không muốn mở ra Internet; giao diện trong
 > notebook vẫn dùng được.
 
-Chế độ khác: `DEMO_MODE="live"` với `ROUTE_IDS` là 5 tuyến bus đã xác minh, hoặc `DEMO_MODE="replay"` với
-`RECORDING_MANIFEST` trỏ tới một recording có sẵn. Notebook không tự đổi chế độ khi nguồn lỗi.
+`DEMO_MODE="replay"` cần `RECORDING_MANIFEST`. `DEMO_MODE="synthetic"` bỏ qua `ROUTE_IDS` và dùng 5 tuyến
+fixture `R_A`–`R_E`. Notebook không tự đổi chế độ khi nguồn live lỗi.
 
 ## Quickstart B — Linux local, native (cùng code path với Colab)
 
@@ -146,7 +127,8 @@ Lệnh tương đương qua Makefile: `make doctor`, `make infra-up`, `make init
 RECORDING=... SPEED=10`, `make app-up`, `make test`, `make test-integration`, `make benchmark SCENARIO=...`,
 `make report RUN_ID=...` và `make stop`. Chạy `make help` để xem toàn bộ.
 
-Profile `local-docker` (`docker-compose.yml`) đã được viết đầy đủ nhưng **chưa chạy thử**.
+Profile `local-docker` (`docker-compose.yml`) đã được viết. Đường đã chạy end-to-end là native trên Colab
+(`colab-native`), không phải Docker.
 
 ## Kiểm thử
 
