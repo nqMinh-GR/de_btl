@@ -188,6 +188,23 @@ Oracle độc lập nằm ở `tests/oracle/` và chỉ dùng thư viện chuẩ
 
 ## Tài liệu
 
+### Tổng hợp dự án và Data Business Requirements
+
+Tài liệu tổng hợp theo phạm vi **10 tuyến bus trong notebook hiện tại**, gồm **8 Data Business Requirements**
+và **32 tiêu chí nghiệm thu**: vehicle position, ETA, service alerts, freshness, delay KPI, data quality,
+pipeline status và replay/recovery. Mỗi BR có mục tiêu nghiệp vụ, dữ liệu đầu vào, quy tắc xử lý, đầu ra API
+và bằng chứng mã nguồn. Tài liệu cũng ghi rõ khác biệt với thiết kế cũ và những phần còn cần kiểm chứng runtime.
+
+* [Đọc bản Markdown](docs/TransitPulse_MBTA_Project_Data_Business_Requirements_VI.md)
+* [Tải bản Word](docs/TransitPulse_MBTA_Project_Data_Business_Requirements_VI.docx)
+
+Bộ khảo sát codebase gồm: [công nghệ](docs/codebase/STACK.md), [cấu trúc](docs/codebase/STRUCTURE.md),
+[kiến trúc](docs/codebase/ARCHITECTURE.md), [quy ước](docs/codebase/CONVENTIONS.md),
+[tích hợp](docs/codebase/INTEGRATIONS.md), [kiểm thử](docs/codebase/TESTING.md)
+và [rủi ro cùng khoảng trống](docs/codebase/CONCERNS.md).
+
+### Đặc tả và vận hành
+
 * Nghiệp vụ và yêu cầu: `docs/business_requirements.md`
 * Kiến trúc và luồng dữ liệu: `docs/architecture.md`
 * Từ điển dữ liệu: `docs/data_dictionary.md`

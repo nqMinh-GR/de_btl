@@ -1,0 +1,464 @@
+
+=== DIRECTORY TREE (max depth 3, source files only) ===
+.env.example
+.gitattributes
+.github
+.github/workflows
+.github/workflows/ci.yml
+.github/workflows/integration.yml
+.gitignore
+.pytest_cache
+.pytest_cache/.gitignore
+.pytest_cache/CACHEDIR.TAG
+.pytest_cache/README.md
+.pytest_cache/v
+.pytest_cache/v/cache
+.pytest_cache/v/cache/nodeids
+.python-version
+Makefile
+README.md
+app
+app/.streamlit
+app/.streamlit/config.toml
+app/api_client.py
+app/components
+app/components/__init__.py
+app/components/badges.py
+app/components/banner.py
+app/components/map_layers.py
+app/components/states.py
+app/state.py
+app/streamlit_app.py
+app/views
+app/views/__init__.py
+app/views/alerts.py
+app/views/map.py
+app/views/overview.py
+app/views/quality.py
+app/views/stops.py
+app/views/vehicle_history.py
+benchmarks
+benchmarks/README.md
+benchmarks/compute.py
+benchmarks/report.py
+benchmarks/run_benchmark.py
+benchmarks/samplers.py
+benchmarks/scenarios.yaml
+config
+config/base.yaml
+config/colab.yaml
+config/docker.yaml
+config/local.yaml
+deploy
+deploy/native
+deploy/native/cassandra
+deploy/native/cassandra/overrides.yaml
+deploy/native/kafka
+deploy/native/kafka/server.properties.tmpl
+deploy/native/spark
+deploy/native/spark/ivysettings.xml
+deploy/runtime-manifest.json
+docker
+docker/app.Dockerfile
+docker/render_runtime.py
+docker-compose.yml
+docs
+docs/architecture.md
+docs/business_requirements.md
+docs/clock_and_time.md
+docs/data_dictionary.md
+docs/decisions.md
+docs/demo_script.md
+docs/github_colab.md
+docs/interfaces.md
+docs/limitations.md
+docs/offline_checklist.md
+docs/publish_protocol.md
+docs/query_mapping.md
+docs/runbook.md
+docs/traceability.md
+docs/versions.md
+frontend
+frontend/.env.example
+frontend/README.md
+frontend/index.html
+frontend/package-lock.json
+frontend/package.json
+frontend/postcss.config.js
+frontend/src
+frontend/src/App.jsx
+frontend/src/AppContext.jsx
+frontend/src/api
+frontend/src/api/client.js
+frontend/src/components
+frontend/src/components/CommandPalette.jsx
+frontend/src/components/Header.jsx
+frontend/src/components/Sidebar.jsx
+frontend/src/components/SnapshotLogModal.jsx
+frontend/src/components/TerminalLogsDrawer.jsx
+frontend/src/components/TransitMap.jsx
+frontend/src/format.js
+frontend/src/index.css
+frontend/src/main.jsx
+frontend/src/views
+frontend/src/views/AlertsView.jsx
+frontend/src/views/MapView.jsx
+frontend/src/views/OverviewView.jsx
+frontend/src/views/QualityView.jsx
+frontend/src/views/StopsView.jsx
+frontend/src/views/VehicleHistoryView.jsx
+frontend/tailwind.config.js
+frontend/vite.config.js
+notebooks
+notebooks/TransitPulse_MBTA_Colab_Demo.ipynb
+notebooks/colab_ui.py
+notebooks/requirements-kernel.txt
+pyproject.toml
+reports
+reports/environment_verification.json
+scripts
+scripts/bootstrap_colab.sh
+scripts/configure_repository.py
+scripts/demo.py
+scripts/doctor.py
+scripts/export_artifacts.py
+scripts/infra.py
+scripts/prepare_runtime.py
+scripts/probes
+scripts/probes/spark_kafka_probe.py
+scripts/verify_environment.py
+src
+src/transitpulse
+src/transitpulse/__init__.py
+src/transitpulse/api
+src/transitpulse/api/__init__.py
+src/transitpulse/api/app.py
+src/transitpulse/api/builders.py
+src/transitpulse/api/cache.py
+src/transitpulse/api/context.py
+src/transitpulse/api/deps.py
+src/transitpulse/api/errors.py
+src/transitpulse/api/freshness.py
+src/transitpulse/api/memory_repository.py
+src/transitpulse/api/metrics.py
+src/transitpulse/api/middleware.py
+src/transitpulse/api/models.py
+src/transitpulse/api/paging.py
+src/transitpulse/api/params.py
+src/transitpulse/api/repository.py
+src/transitpulse/api/routers
+src/transitpulse/api/settings.py
+src/transitpulse/cli.py
+src/transitpulse/config.py
+src/transitpulse/contracts
+src/transitpulse/contracts/__init__.py
+src/transitpulse/contracts/accounting.py
+src/transitpulse/contracts/control.py
+src/transitpulse/contracts/dlq.py
+src/transitpulse/contracts/enums.py
+src/transitpulse/contracts/envelope.py
+src/transitpulse/contracts/ids.py
+src/transitpulse/contracts/policy.py
+src/transitpulse/contracts/topics.py
+src/transitpulse/ingestion
+src/transitpulse/ingestion/__init__.py
+src/transitpulse/ingestion/__main__.py
+src/transitpulse/ingestion/archive.py
+src/transitpulse/ingestion/collector.py
+src/transitpulse/ingestion/disk_budget.py
+src/transitpulse/ingestion/envelope_builder.py
+src/transitpulse/ingestion/feed_parse.py
+src/transitpulse/ingestion/http_fetch.py
+src/transitpulse/ingestion/kafka_producer.py
+src/transitpulse/ingestion/outbox.py
+src/transitpulse/ingestion/recording.py
+src/transitpulse/ingestion/scheduler.py
+src/transitpulse/ingestion/scope_filter.py
+src/transitpulse/ingestion/source_check.py
+src/transitpulse/obs
+src/transitpulse/obs/__init__.py
+src/transitpulse/obs/lineage.py
+src/transitpulse/obs/logging.py
+src/transitpulse/obs/metrics.py
+src/transitpulse/processing
+src/transitpulse/processing/__init__.py
+src/transitpulse/processing/alerts.py
+src/transitpulse/processing/batch.py
+src/transitpulse/processing/context.py
+src/transitpulse/processing/control_clock.py
+src/transitpulse/processing/curated.py
+src/transitpulse/processing/dlq.py
+src/transitpulse/processing/faults.py
+src/transitpulse/processing/kpi.py
+src/transitpulse/processing/parse.py
+src/transitpulse/processing/predictions.py
+src/transitpulse/processing/quality.py
+src/transitpulse/processing/report_job.py
+src/transitpulse/processing/schedule.py
+src/transitpulse/processing/schemas.py
+src/transitpulse/processing/sink.py
+src/transitpulse/processing/spark_ids.py
+src/transitpulse/processing/spark_session.py
+src/transitpulse/processing/stream_job.py
+
+=== STACK DETECTION (manifest files) ===
+
+--- Makefile ---
+# TransitPulse MBTA — command interface (spec md §19.3). Requires GNU make >= 3.82 (recipes use `>` as prefix).
+#
+#   PROFILE=local-native  (default) native runner on Linux: scripts/*.py with .venv/bin/python, data in WORKDIR
+#   PROFILE=colab-native  same native runner with the Colab work directory (/content/transitpulse-runtime)
+#   PROFILE=local-docker  Docker Compose (NOT_RUN in this repository's verification; needs a committed uv.lock)
+#
+# Every command prints one JSON document on stdout (progress on stderr). No target deletes data: `stop` keeps
+# volumes, checkpoints and raw data; `reset` is a dry run unless CONFIRM=<token printed by the dry run> is given.
+
+.RECIPEPREFIX := >
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+.DEFAULT_GOAL := help
+
+PROFILE ?= local-native
+REPO := $(CURDIR)
+ifeq ($(PROFILE),colab-native)
+WORKDIR ?= $(if $(TP_WORKDIR),$(TP_WORKDIR),/content/transitpulse-runtime)
+else
+WORKDIR ?= $(if $(TP_WORKDIR),$(TP_WORKDIR),$(REPO)/.runtime)
+endif
+PY ?= $(REPO)/.venv/bin/python
+COMPOSE ?= docker compose
+
+ROUTE_IDS ?=
+DURATION_SECONDS ?= 7200
+DEMO_DURATION ?= 600
+RECORDING ?=
+STATIC_ZIP ?=
+SPEED ?= 10
+SCENARIO ?=
+REPETITIONS ?=
+MAX_SECONDS ?=
+RUN_ID ?=
+OFFLINE ?=
+CHECK_REALTIME ?= 1
+ALL ?=
+TARGETS ?= session
+CONFIRM ?=
+MODE ?= synthetic
+SEED ?=
+COLAB_WORKDIR ?= /content/transitpulse-runtime
+API_URL ?= http://127.0.0.1:8000/api/v1
+PYTEST_ARGS ?=
+
+ifeq ($(filter $(PROFILE),local-native colab-native local-docker),)
+$(error PROFILE must be local-native, colab-native or local-docker (got '$(PROFILE)'))
+endif
+
+yes = $(filter 1 yes true YES TRUE,$(1))
+require = $(if $(strip $($(1))),,$(error $(1) is required: $(2)))
+NATIVE_FLAGS = --profile $(PROFILE) --workdir $(WORKDIR)
+
+.PHONY: help venv-check doctor build infra-up init source-check list-routes static-load start-live app-up \
+        start-replay status test test-spark test-integration lint check golden-smoke benchmark report stop reset \
+        colab-setup colab-start colab-status colab-stop
+
+help:
+> @echo "TransitPulse MBTA (PROFILE=$(PROFILE), WORKDIR=$(WORKDIR))"
+> @echo ""
+> @echo "  make doctor                                   prerequisites, versions, ports, memory/disk for PROFILE"
+> @echo "  make build                                    native: bootstrap runtime (uv, Python, JDK, Kafka, Cassandra, jars)"
+> @echo "                                                docker: build the app image (needs uv.lock)"
+> @echo "  make infra-up                                 start Kafka + Cassandra (idempotent)"
+> @echo "  make init                                     topics + CQL migrations (idempotent, never drops)"
+> @echo "  make source-check [ROUTE_IDS=a,b] [OFFLINE=1] probe the MBTA sources -> reports/source_probe_report.json"
+> @echo "  make list-routes [ZIP=path]                   bus routes of the GTFS ZIP (+ realtime vehicle counts)"
+> @echo "  make static-load ROUTE_IDS=a,b [STATIC_ZIP=p] load the static scope (Spark batch)"
+> @echo "  make start-live ROUTE_IDS=a,b DURATION_SECONDS=7200"
+> @echo "  make start-replay RECORDING=<manifest> SPEED=10"
+> @echo "  make app-up                                   dashboard (Streamlit) against the API"
+> @echo "  make status                                   session and component status"
+> @echo "  make test | test-spark | test-integration     unit+runtime | Spark | real-stack integration (IT01-IT16)"
+> @echo "  make lint | check                             ruff | repository checks (notebooks, config, fixtures, compose)"
+> @echo "  make golden-smoke                             golden fixture through the real stack vs expected.json"
+> @echo "  make benchmark SCENARIO=replay_10x [RECORDING=...] [REPETITIONS=3] [MAX_SECONDS=...]"
+> @echo "  make report RUN_ID=<run_id>                   FR09 batch report over committed curated batches"
+> @echo "  make stop [ALL=1]                             stop the session (ALL=1: also Kafka/Cassandra); data kept"
+> @echo "  make reset TARGETS=session [CONFIRM=token]    dry run by default; never outside WORKDIR"
+> @echo "  make colab-setup | colab-start MODE=synthetic|replay|live | colab-status | colab-stop"
+
+[TRUNCATED] Showing first 80 of 271 lines.
+--- pyproject.toml ---
+[project]
+name = "transitpulse"
+version = "0.1.0"
+description = "TransitPulse MBTA: real-time bus monitoring and predicted-delay alerts (Kafka, Spark Structured Streaming, Cassandra, FastAPI)"
+readme = "README.md"
+requires-python = "==3.11.*"
+license = { text = "MIT" }
+# Direct dependencies are pinned exactly. uv.lock is generated on the first
+# Colab bootstrap when it is missing (see docs/versions.md and docs/decisions.md).
+dependencies = [
+    "pyspark==3.5.7",
+    "confluent-kafka==2.15.1",
+    "cassandra-driver==3.30.1",
+    "fastapi==0.142.2",
+    "uvicorn==0.54.0",
+    "pydantic==2.13.5",
+    "httpx==0.28.1",
+    "pyyaml==6.0.3",
+    "prometheus-client==0.26.0",
+    "psutil==7.2.2",
+    "tzdata==2026.5",
+]
+
+[project.optional-dependencies]
+# Streamlit/PyDeck dashboard: used locally and on Colab behind the Cloudflare quick tunnel.
+# Bootstrap always syncs it (`uv sync --locked --extra dashboard`); the notebook widget UI does not need it.
+dashboard = [
+    "streamlit==1.65.0",
+    "pydeck==0.9.3",
+]
+
+[project.scripts]
+transitpulse = "transitpulse.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-timeout==2.4.0",
+    "ruff==0.16.10",
+    "nbformat==5.11.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+default-groups = ["dev"]
+# pyspark 3.5.7 is an sdist on PyPI and is built at install time. Pin the build backend to the setuptools
+# line that was current when 3.5.7 was released, so later removals of legacy APIs cannot break the build.
+build-constraint-dependencies = ["setuptools<81"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "unit: pure-Python tests, no JVM, no services",
+    "spark: needs a local SparkSession (JDK 17 + pyspark), no Kafka/Cassandra",
+    "integration: needs real Kafka + Cassandra + Spark via the native runner",
+    "runtime: native runner / bootstrap / supervisor lifecycle tests",
+    "slow: long-running",
+    "performance: benchmark-style tests",
+    "it_case(id): links a test to an integration scenario id (IT01-IT16)",
+    "ct_case(id): links a test to a Colab/GitHub scenario id (CT01-CT15)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests", "scripts", "notebooks", "app", "benchmarks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# UP031 (%-format) is a style preference only; several modules format log/hint text with %.
+ignore = ["E501", "UP031"]
+
+[tool.ruff.lint.per-file-ignores]
+# The notebook UI must stay importable on older Colab kernels (Python 3.9+ syntax and typing aliases), and the
+# notebook's cells import helpers after defining parameters, so old-style annotations and late imports are expected.
+"notebooks/**" = ["UP006", "UP007", "UP035", "UP045", "E402"]
+
+
+=== ENTRY POINTS ===
+No common entry points found. Check 'main' or 'scripts.start' in manifest files above.
+
+=== LINTING AND FORMATTING CONFIG ===
+No linting or formatting config files found in project root.
+
+=== ENVIRONMENT VARIABLE TEMPLATES ===
+--- .env.example ---
+# Example configuration only. No credentials are needed: MBTA feeds are public.
+# Copy to .env (gitignored) if you want to override defaults locally.
+TP_PROFILE=local-native
+TP_WORKDIR=./.runtime
+# Comma-separated, verified bus route IDs from `make list-routes` (no random fallback).
+TP_ROUTE_IDS=
+TP_KAFKA_BOOTSTRAP=127.0.0.1:9092
+TP_CASSANDRA_HOSTS=127.0.0.1
+TP_API_URL=http://127.0.0.1:8000/api/v1
+
+
+=== TODO / FIXME / HACK (production code only, test dirs excluded) ===
+None found.
+
+=== GIT RECENT COMMITS (last 20) ===
+fe50c68 Update react UI
+63bd1d0 Fix lineage trace colliding on the stage status argument.
+055a408 Fix live collector startup and refresh the Colab clone.
+c74404a Update for realtime map
+ec8fd88 Setup for 13gb ram
+ceb3068 Restore README.md required by the package build
+26a432e Fix bug static load
+488fda6 Point the Colab notebook at nqMinh-GR/de_btl
+e05e38d project setup demo
+
+=== HIGH-CHURN FILES (last 90 days, top 20) ===
+   7 notebooks/TransitPulse_MBTA_Colab_Demo.ipynb
+   5 README.md
+   3 notebooks/colab_ui.py
+   3 config/colab.yaml
+   3 tests/spark/conftest.py
+   2 .gitignore
+   2 Makefile
+   2 config/base.yaml
+   2 deploy/runtime-manifest.json
+   2 docs/github_colab.md
+   2 src/transitpulse/runtime/access.py
+   2 src/transitpulse/runtime/bootstrap.py
+   2 src/transitpulse/runtime/cli_demo.py
+   2 src/transitpulse/runtime/doctor.py
+   2 src/transitpulse/runtime/export.py
+   2 src/transitpulse/runtime/session.py
+   2 src/transitpulse/runtime/supervisor.py
+   2 tests/runtime/test_tunnel.py
+   2 tests/unit/test_api_endpoints.py
+   2 src/transitpulse/obs/lineage.py
+
+=== MONOREPO SIGNALS ===
+No monorepo signals detected.
+
+=== CODE METRICS ===
+Total files scanned: 359
+Total lines of code: 76063
+
+Files by language:
+  Python: 271
+  Other: 68
+  JavaScript/React: 15
+  JavaScript: 5
+
+Top 10 largest files:
+system design full.pdf: 1358.1KB
+notebooks/colab_ui.py: 159.4KB
+frontend/package-lock.json: 98.9KB
+tests/fixtures/golden/expected.json: 90.8KB
+src/transitpulse/processing/batch.py: 80.2KB
+src/transitpulse/ingestion/collector.py: 69.7KB
+src/transitpulse/runtime/cli_demo.py: 67.7KB
+src/transitpulse/replay/publisher.py: 65.9KB
+notebooks/TransitPulse_MBTA_Colab_Demo.ipynb: 63.7KB
+src/transitpulse/verify/golden.py: 58.0KB
+
+=== CI/CD PIPELINES ===
+CI/CD: GitHub Actions
+
+=== CONTAINERS & ORCHESTRATION ===
+Orchestration: Docker Compose found
+
+=== SECURITY & COMPLIANCE ===
+No security configs detected.
+
+=== PERFORMANCE & TESTING ===
+No performance testing configs detected.
+
+=== SCAN COMPLETE ===
