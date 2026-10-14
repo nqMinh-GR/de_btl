@@ -144,7 +144,7 @@ def test_root_flag_rules(tmp_path: Path) -> None:
 def test_cassandra_env_sets_heap_without_heap_newsize(tmp_path: Path) -> None:
     cfg = load_config("colab-native", workdir=tmp_path)
     env = cassandra_env(_runtime(tmp_path), WorkPaths.from_workdir(tmp_path), cfg)
-    assert env["MAX_HEAP_SIZE"] == "1536M" and env["MAX_DIRECT_MEMORY_SIZE"] == "512M"
+    assert env["MAX_HEAP_SIZE"] == "4G" and env["MAX_DIRECT_MEMORY_SIZE"] == "2G"
     assert "HEAP_NEWSIZE" not in env
     assert "@OWNER_TOKEN@" in env["JVM_EXTRA_OPTS"]
     assert env["CASSANDRA_CONF"].startswith(str(WorkPaths.from_workdir(tmp_path).root))

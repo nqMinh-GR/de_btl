@@ -60,6 +60,10 @@ def spark():
     pytest.importorskip("pyspark")
     from pyspark.sql import SparkSession
 
+    # One session serves every Spark test. Colab is ~32 GiB and already runs Kafka (1g) plus
+    # Cassandra (4G heap + 2G direct) when this session starts, so the driver is 4g — under the
+    # 6g demo driver, with room left for the notebook. ExitOnOutOfMemoryError makes a full heap
+    # fail the test instead of retrying page allocation until the cell timeout.
     session = (
         SparkSession.builder.master("local[1]")
         .appName("transitpulse-tests")
@@ -70,14 +74,28 @@ def spark():
         .config("spark.ui.showConsoleProgress", "false")
         .config("spark.driver.host", "127.0.0.1")
         .config("spark.driver.bindAddress", "127.0.0.1")
+        .config("spark.driver.memory", "4g")
+        .config("spark.driver.maxResultSize", "1g")
         .config("spark.python.worker.reuse", "true")
-        .config("spark.driver.extraJavaOptions", "-Duser.timezone=UTC")
-        .config("spark.executor.extraJavaOptions", "-Duser.timezone=UTC")
+        .config("spark.driver.extraJavaOptions", "-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError")
+        .config("spark.executor.extraJavaOptions", "-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError")
         .getOrCreate()
     )
     session.sparkContext.setLogLevel("WARN")
     yield session
     session.stop()
+
+
+@pytest.fixture(autouse=True)
+def _release_spark_cache(request: pytest.FixtureRequest):
+    """Drop cached plans between tests so the shared session does not keep growing."""
+    yield
+    if "spark" not in request.fixturenames:
+        return
+    try:
+        request.getfixturevalue("spark").catalog.clearCache()
+    except Exception:  # noqa: BLE001 - a dead Spark JVM must not hide the test result
+        return
 
 
 # --------------------------------------------------------------------------------------------------
