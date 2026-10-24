@@ -26,7 +26,10 @@ git add README.md notebooks/TransitPulse_MBTA_Colab_Demo.ipynb && git commit -m 
 
 ## 2. Mở notebook
 
-URL: `https://colab.research.google.com/github/<OWNER>/<REPO>/blob/main/notebooks/TransitPulse_MBTA_Colab_Demo.ipynb`
+URL demo: `https://colab.research.google.com/github/<OWNER>/<REPO>/blob/main/notebooks/TransitPulse_MBTA_Colab_Demo.ipynb`
+
+URL benchmark (Run All đo stress, recovery, replay nếu có recording, rồi tải `benchmarks.zip`):
+`https://colab.research.google.com/github/<OWNER>/<REPO>/blob/main/notebooks/TransitPulse_MBTA_Colab_Benchmark.ipynb`
 
 Cell tham số (cell 2):
 ```python
