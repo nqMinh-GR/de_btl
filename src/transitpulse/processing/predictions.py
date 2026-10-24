@@ -306,6 +306,8 @@ def build_trip_update_generation(
             F.when(F.col("is_target"), F.col("trip_kpi_reason")),
         ),
     )
+    # One materialization of the prediction plan; stats, curated and sink rows reuse it.
+    evs = evs.persist()
 
     feed_ts = Q.ts_lit(params.feed_timestamp)
     preds = evs.where(F.col("disposition") == "retained").select(
@@ -591,4 +593,5 @@ def build_trip_update_generation(
                  "entity_quality": entity_quality},
         dlq=dlq,
         notes={"builder": BUILDER_VERSION, "feed_type": FEED_TYPE, "parent_dependent": False},
+        cache=[evs],
     )

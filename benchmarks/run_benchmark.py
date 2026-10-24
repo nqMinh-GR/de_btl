@@ -169,6 +169,15 @@ class Bench:
             self.h.api_base = self.api.start()
         return self.api.base_url
 
+    def stop_api(self) -> None:
+        if self.api is None:
+            return
+        try:
+            self.api.stop()
+        except Exception as exc:  # noqa: BLE001 - shutdown continues
+            log(f"could not stop api: {exc}")
+        self.api = None
+
     def close(self) -> None:
         if self.h is not None:
             for comp in ("publisher", "collector", "processor"):
@@ -179,8 +188,24 @@ class Bench:
                     except Exception as exc:  # noqa: BLE001 - shutdown continues
                         log(f"could not stop {comp}: {exc}")
             self.h.close()
-        if self.api is not None:
-            self.api.stop()
+        self.stop_api()
+
+    def api_latency(self, run: Any) -> dict[str, Any]:
+        """100 GETs of /vehicles after the drain. Server time only; the browser UI is not measured."""
+        from urllib.parse import urlencode
+
+        routes = list(getattr(run, "route_ids", None) or [])
+        if not routes:
+            return compute.missing("s", "API", "run has no route_id to probe")
+        try:
+            try:
+                base = self.ensure_api().rstrip("/")
+            except Exception as exc:  # noqa: BLE001 - a failed probe is a missing metric, not a failed scenario
+                return compute.missing("s", "API", f"API did not start: {exc}"[:300])
+            url = f"{base}/vehicles?{urlencode({'run_id': run.run_id, 'route_id': routes[0]})}"
+            return compute.probe_http_latency(url, samples=100, timeout=10.0)
+        finally:
+            self.stop_api()
 
     # ------------------------------------------------------------------ inputs
     def recording_for(self, name: str, scen: dict[str, Any], row: dict[str, Any]) -> tuple[Any, Any] | None:
@@ -238,7 +263,8 @@ class Bench:
                                 label=f"{self.args.bench_id}:{name}:r{rep}")
         row.update(run_id=run.run_id, source_type=source_type)
         log(f"{name} r{rep}: run {run.run_id}, starting processor")
-        self.h.start_processor(run.run_id)
+        # Codegen stays off for demo, golden smoke and recovery. Throughput pays the compile during warm-up.
+        self.h.start_processor(run.run_id, extra_env={"TP_SPARK_WHOLE_STAGE": "true"})
         disk_start = samplers.disk_usage(self.paths)
         highs_start = self.h.high_watermarks(SNAPSHOT_TOPICS)
         res = samplers.ResourceSampler(self.h.sup, RESOURCE_COMPONENTS, self.args.resource_interval)
@@ -335,7 +361,7 @@ class Bench:
                                          "delta(batch_failures_total) / batches in window") if (
             fails is not None and batches) else compute.missing("failed batch / batch", "processor.prom",
                                                                 "no batch counter or no batch in the window")
-        m["api_latency"] = compute.missing("s", "API", "not part of this protocol (no API load generator)")
+        m["api_latency"] = self.api_latency(run)
         row["metrics"] = m
         row["samples_n"] = len([s for s in res_samples if compute.in_window(s.get("t_wall"), win_start, win_end)])
         row["window"] = {"start": iso_utc(datetime.fromtimestamp(win_start, UTC)),

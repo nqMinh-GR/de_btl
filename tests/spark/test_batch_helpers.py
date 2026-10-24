@@ -347,6 +347,10 @@ def test_bounded_progress_json_drops_keys_instead_of_slicing():
     doc = json.loads(text)                                  # always valid JSON
     assert len(text) <= 2000 and "endOffsets" not in doc and "latestOffsets" not in doc
     assert doc["kafka_backlog"] == big["kafka_backlog"] and doc["truncated_keys"] == ["endOffsets", "latestOffsets"]
+    with_duration = dict(big, durationMs={"triggerExecution": 1234})
+    kept = json.loads(bounded_progress_json(with_duration, limit=2000))
+    assert kept["durationMs"] == {"triggerExecution": 1234}
+    assert "durationMs" not in kept.get("truncated_keys", [])
 
 
 def test_heartbeat_binds_explicit_null_error_and_keeps_backlog_when_idle():
@@ -397,10 +401,11 @@ def test_heartbeat_kafka_backlog_entries():
 
 
 # ------------------------------------------------------------------------------------------ spark conf
-def test_session_conf(tmp_path):
+def test_session_conf(tmp_path, monkeypatch):
     from transitpulse.config import load_config
-    from transitpulse.processing.spark_session import session_conf
+    from transitpulse.processing.spark_session import WHOLE_STAGE_ENV, session_conf
 
+    monkeypatch.delenv(WHOLE_STAGE_ENV, raising=False)
     cfg = load_config("local-native", workdir=tmp_path, environ={})
     conf = session_conf(cfg, None)
     assert conf["spark.sql.session.timeZone"] == "UTC"
@@ -410,6 +415,13 @@ def test_session_conf(tmp_path):
     assert conf["spark.sql.codegen.wholeStage"] == "true"
     colab = session_conf(load_config("colab-native", workdir=tmp_path, environ={}), None)
     assert colab["spark.sql.codegen.wholeStage"] == "false"
+    monkeypatch.setenv(WHOLE_STAGE_ENV, "true")
+    forced = session_conf(load_config("colab-native", workdir=tmp_path, environ={}), None)
+    assert forced["spark.sql.codegen.wholeStage"] == "true"
+    monkeypatch.setenv(WHOLE_STAGE_ENV, "false")
+    off = session_conf(load_config("colab-native", workdir=tmp_path, environ={}), None)
+    assert off["spark.sql.codegen.wholeStage"] == "false"
+    monkeypatch.delenv(WHOLE_STAGE_ENV, raising=False)
     assert conf["spark.local.dir"].startswith(str(tmp_path.resolve()))
     assert "spark.jars" not in conf
     jar = tmp_path / "spark-sql-kafka.jar"

@@ -50,6 +50,7 @@ entities and candidate records are different units and are never summed together
 4. Measurement window `[t0 + warmup, t0 + warmup + measure)`, truncated at the end of the timeline (`PARTIAL`).
    Example: a 2 h recording at 50x lasts 144 s, so warm-up 60 s and 84 s measured.
 5. Send `finish`, drain until the backlog is 0 (bounded by `drain_timeout_seconds`), stop the processor.
+   Throughput runs then issue 100 GETs of `/api/v1/vehicles` and stop the API again. Recovery does not use that probe.
 
 ## Computations (`compute.py`)
 
@@ -59,8 +60,9 @@ entities and candidate records are different units and are never summed together
 | normalized candidates/s, unique records/s, duplicate fraction | Δ of `tp_processor_normalized_candidates_total`, `_unique_records_total`, `_duplicate_records_total` (processor textfile at the window edges); fraction = duplicates / (unique + duplicates) with the denominator reported |
 | visibility latency p50/p95/p99 | `snapshot_manifest.visibility_latency_ms` (else `first_visible_at − published_at`) of generations first enqueued in the window; late / expired / never-visible generations counted separately |
 | source age | `metrics_as_of − observation_time` of vehicles (sampled VP generations); never added to latency |
-| batch duration | `query_progress.jsonl` `durationMs` |
+| batch duration | `query_progress.jsonl` `durationMs` (`triggerExecution`). A batch counts when `[timestamp - duration, timestamp]` overlaps the window, so a batch that finishes during drain is included |
 | Cassandra write latency | processor JSON log lines with `stage=cassandra_write` and `duration_ms` |
+| API latency | 100 GETs of `/api/v1/vehicles` for one in-scope route after the drain. This is server time of the request the UI calls. Browser UI latency is not measured |
 | resources | CPU mean/max %, RSS max per component and total (MiB) |
 | Cassandra rows written | table totals of `expected_counts` of generations READY in the window |
 | recovery | from the start of recovery actions to the expected generation being current and matching `expected.json`; records lost / duplicated against the golden history |
@@ -82,4 +84,5 @@ when n < 100 (n, min and max are always reported) — decision D-E25.
 
 Single broker, single Cassandra node (RF1) and `local[2]` Spark: results describe the machine they ran on. The
 processor JVM starts cold for every repetition and a fresh checkpoint reads the topics from `earliest`
-(D-PUB-08), so the warm-up absorbs that catch-up. API and UI latency are not part of this protocol.
+(D-PUB-08), so the warm-up absorbs that catch-up. Throughput processors set `TP_SPARK_WHOLE_STAGE=true`;
+demo and golden smoke keep the profile flag. API latency above is server time. Browser UI latency is not measured.

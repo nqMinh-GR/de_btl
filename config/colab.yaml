@@ -9,8 +9,10 @@ paths:
 spark:
   driver_memory: 16g
   shuffle_partitions: 2
-  # 2 vCPU: compiling the prediction plan (whole-stage codegen) takes minutes per micro-batch
-  # and the 5-step golden smoke then exceeds its 900s budget. Extra heap does not shorten that compile.
+  # Compiling the prediction plan (whole-stage codegen) takes minutes per micro-batch on a small
+  # Colab VM and the 5-step golden smoke then exceeds its 900s budget. Extra heap does not shorten
+  # that compile. Demo and golden smoke stay off. Benchmark throughput sets TP_SPARK_WHOLE_STAGE=true
+  # on its own processor so the first compile can sit in the warm-up.
   whole_stage_codegen: false
 api:
   max_fanout_routes: 10          # dashboard may read /vehicles and /alerts across the whole 10-route scope

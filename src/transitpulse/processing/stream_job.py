@@ -147,8 +147,8 @@ def backlog_entries(rec: dict[str, Any]) -> list[dict[str, Any]]:
 
 PROGRESS_JSON_MAX_CHARS = 20000
 # Dropped in this order when the heartbeat document is too large (the result is always valid JSON).
-_PROGRESS_DROP_ORDER: tuple[str, ...] = ("endOffsets", "latestOffsets", "durationMs", "kafka_backlog")
-_PROGRESS_KEEP: frozenset[str] = frozenset({"query_id", "batch_id", "numInputRows"})
+_PROGRESS_DROP_ORDER: tuple[str, ...] = ("endOffsets", "latestOffsets", "kafka_backlog")
+_PROGRESS_KEEP: frozenset[str] = frozenset({"query_id", "batch_id", "numInputRows", "durationMs"})
 
 
 def bounded_progress_json(doc: dict[str, Any], limit: int = PROGRESS_JSON_MAX_CHARS) -> str:
@@ -246,6 +246,7 @@ class ProgressListener(StreamingQueryListener):
                     self.metrics.kafka_backlog.labels(topic=b["topic"], partition=str(b["partition"])).set(
                         b["backlog"])
         self._heartbeat("ACTIVE", {"batch_id": rec["batchId"], "numInputRows": rec["numInputRows"],
+                                   "durationMs": rec.get("durationMs"),
                                    "endOffsets": rec["endOffsets"], "latestOffsets": rec["latestOffsets"],
                                    "kafka_backlog": backlog})
 

@@ -1105,9 +1105,40 @@ class BatchProcessor:
         unknown = sorted(set(out.tables) - set(TABLE_TTL_CLASS))
         if unknown:
             raise InvalidGenerationOutput(f"{feed} builder returned unknown tables {unknown}")
+        return self._persist_output(out)
+
+    def _persist_output(self, out: GenerationOutput) -> GenerationOutput:
+        """Cache builder outputs so stats, curated and the sink share one execution of the plan."""
+
+        def keep(df: DataFrame | None) -> DataFrame | None:
+            if df is None:
+                return None
+            cached = df.persist(_SL)
+            out.cache.append(cached)
+            return cached
+
+        out.tables = {name: keep(df) for name, df in out.tables.items()}
+        out.stats = keep(out.stats)
+        out.curated = {name: keep(df) for name, df in (out.curated or {}).items()}
+        out.dlq = keep(out.dlq)
         return out
 
-    def _build(self, spark, ok: DataFrame, man: Mapping[str, Any], run: RunInfo
+    def _unpersist_output(self, out: GenerationOutput) -> None:
+        seen: set[int] = set()
+        for df in out.cache:
+            if df is None or id(df) in seen:
+                continue
+            seen.add(id(df))
+            try:
+                df.unpersist()
+            except Exception:  # noqa: BLE001 - cleanup only
+                pass
+
+    def _stage_ms(self, stage: str, started: float, *, batch_id: int, feed: str, snapshot_id: str) -> None:
+        log_event(_log, stage, "ok", batch_id=batch_id, feed=feed, snapshot_id=snapshot_id,
+                  duration_ms=round((time.monotonic() - started) * 1000, 3))
+
+    def _build(self, spark, ok: DataFrame, man: Mapping[str, Any], run: RunInfo, batch_id: int
                ) -> tuple[GenerationOutput, BuildParams, str | None]:
         parent, available, reason = self._load_parent(spark, man, run)
         if reason:
@@ -1115,11 +1146,14 @@ class BatchProcessor:
                       feed=man["feed_type"], snapshot_id=man["snapshot_id"],
                       parent_snapshot_id=man.get("parent_snapshot_id"))
         params = params_from_manifest(man, parent_available=available)
+        started = time.monotonic()
         out = self._call_builder(spark, self._snap_frame(ok, man), params, run, parent)
+        self._stage_ms("builder", started, batch_id=batch_id, feed=man["feed_type"], snapshot_id=man["snapshot_id"])
         return out, params, reason
 
     def _stage_curated(self, curated: CuratedBatch, unit: str, out: GenerationOutput, man: Mapping[str, Any],
                        batch_id: int) -> None:
+        started = time.monotonic()
         cfg = self.ctx.cfg
         datasets: dict[str, DataFrame] = dict(out.curated or {})
         if "dlq" in datasets:
@@ -1131,11 +1165,18 @@ class BatchProcessor:
                                                  "generation_id": man["generation_id"]})
         log_event(_log, "parquet_commit", "ok", "curated unit staged", batch_id=batch_id, feed=man["feed_type"],
                   snapshot_id=man["snapshot_id"], datasets=sorted(datasets))
+        self._stage_ms("curated", started, batch_id=batch_id, feed=man["feed_type"], snapshot_id=man["snapshot_id"])
 
     def _build_curated_only(self, spark, ok: DataFrame, plan: SnapshotPlan, run: RunInfo, curated: CuratedBatch,
                             unit: str) -> None:
-        out, _params, _reason = self._build(spark, ok, plan.manifest, run)
-        self._stage_curated(curated, unit, out, plan.manifest, int(plan.manifest["first_batch_id"]))
+        out = None
+        try:
+            batch_id = int(plan.manifest["first_batch_id"])
+            out, _params, _reason = self._build(spark, ok, plan.manifest, run, batch_id)
+            self._stage_curated(curated, unit, out, plan.manifest, batch_id)
+        finally:
+            if out is not None:
+                self._unpersist_output(out)
 
     def _collect_stats(self, out: GenerationOutput, man: Mapping[str, Any]) -> dict[str, Any]:
         rows = out.stats.collect()
@@ -1215,61 +1256,70 @@ class BatchProcessor:
         ctx = self.ctx
         man = plan.manifest
         feed, sid = plan.feed_type, plan.snapshot_id
-        out, params, parent_reason = self._build(spark, ok, man, run)
-        stats = self._collect_stats(out, man)
-        if need_curated:
-            self._stage_curated(curated, unit, out, man, batch_id)
-        tables = self._generation_tables(spark, out, params, parent_reason, history_only=history_only)
-        if history_only and remaining_s(man["history_expires_at"]) < 1:
-            log_event(_log, "cassandra_write", "skipped", "history TTL already elapsed", batch_id=batch_id,
-                      feed=feed, snapshot_id=sid)
-            return man
-        persisted = {t: df.persist(_SL) for t, df in tables.items()}
+        out: GenerationOutput | None = None
         try:
-            counts = compute_generation_counts(persisted, ctx.schemas, run.route_ids)
-            group1 = {t: df for t, df in persisted.items() if t not in SECOND_WRITE_GROUP}
-            group2 = {t: df for t, df in persisted.items() if t in SECOND_WRITE_GROUP}
-            fault = ctx.faults.take_executor_fault(feed_type=feed, snapshot_id=sid)
-            written = self._write(spark, group1, man, fault if group1 else None)
-            ctx.faults.check(AFTER_PARTIAL_WRITE, feed_type=feed, snapshot_id=sid)
-            for t, n in self._write(spark, group2, man, None if group1 else fault).items():
-                written[t] = written.get(t, 0) + n
+            out, params, parent_reason = self._build(spark, ok, man, run, batch_id)
+            started = time.monotonic()
+            stats = self._collect_stats(out, man)
+            self._stage_ms("stats", started, batch_id=batch_id, feed=feed, snapshot_id=sid)
+            if need_curated:
+                self._stage_curated(curated, unit, out, man, batch_id)
+            tables = self._generation_tables(spark, out, params, parent_reason, history_only=history_only)
+            if history_only and remaining_s(man["history_expires_at"]) < 1:
+                log_event(_log, "cassandra_write", "skipped", "history TTL already elapsed", batch_id=batch_id,
+                          feed=feed, snapshot_id=sid)
+                return man
+            persisted = {t: df.persist(_SL) for t, df in tables.items()}
+            try:
+                counts = compute_generation_counts(persisted, ctx.schemas, run.route_ids)
+                group1 = {t: df for t, df in persisted.items() if t not in SECOND_WRITE_GROUP}
+                group2 = {t: df for t, df in persisted.items() if t in SECOND_WRITE_GROUP}
+                fault = ctx.faults.take_executor_fault(feed_type=feed, snapshot_id=sid)
+                started = time.monotonic()
+                written = self._write(spark, group1, man, fault if group1 else None)
+                ctx.faults.check(AFTER_PARTIAL_WRITE, feed_type=feed, snapshot_id=sid)
+                for t, n in self._write(spark, group2, man, None if group1 else fault).items():
+                    written[t] = written.get(t, 0) + n
+                write_ms = round((time.monotonic() - started) * 1000, 3)
+            finally:
+                for df in persisted.values():
+                    try:
+                        df.unpersist()
+                    except Exception:  # noqa: BLE001 - cleanup only
+                        pass
+            expected_totals = {t: counts.expected_counts.get(t, 0) for t in tables}
+            written_totals = {t: written.get(t, 0) for t in tables}
+            if written_totals != expected_totals:
+                raise CountMismatch(sid, expected_totals, written_totals)
+            log_event(_log, "cassandra_write", "ok", batch_id=batch_id, feed=feed, snapshot_id=sid,
+                      rows=written_totals, history_only=history_only, duration_ms=write_ms)
+            acc = accounting_metrics(stats.get("accounting_json"))
+            for k, v in acc["candidates"].items():
+                ctx.metrics.normalized_candidates.labels(feed=feed, kind=k).inc(v)
+            for k, v in acc["unique"].items():
+                ctx.metrics.unique_records.labels(kind=k).inc(v)
+            for k, v in acc["duplicate"].items():
+                ctx.metrics.duplicate_records.labels(kind=k).inc(v)
+            if int(stats.get("rejected_entity_count") or 0):
+                ctx.metrics.invalid_records.labels(reason="entity_rejected").inc(int(stats["rejected_entity_count"]))
+            if history_only:
+                return man
+            ready_counts = {c: stats.get(c) for c in ("selected_entity_count", "fully_valid_entity_count",
+                                                      "partially_valid_entity_count", "rejected_entity_count",
+                                                      "is_partial", "is_empty")}
+            applied = mark_ready(ctx.session, (ctx.run_id, feed, sid), ready_at=ms_floor(utcnow()),
+                                 expected_counts=counts.expected_counts, content_checksum=counts.content_checksum,
+                                 accounting_json=str(stats.get("accounting_json") or "{}"), counts=ready_counts)
+            final = read_manifest(ctx.session, ctx.run_id, feed, sid, serial=True)
+            if final is None or final.get("status") != READY:
+                raise ManifestConflict(f"snapshot {sid}: READY transition not applied and manifest is "
+                                       f"{None if final is None else final.get('status')}")
+            log_event(_log, "manifest_ready", "ok" if applied else "reused", batch_id=batch_id, feed=feed,
+                      snapshot_id=sid, generation_id=final.get("generation_id"))
+            return final
         finally:
-            for df in persisted.values():
-                try:
-                    df.unpersist()
-                except Exception:  # noqa: BLE001 - cleanup only
-                    pass
-        expected_totals = {t: counts.expected_counts.get(t, 0) for t in tables}
-        written_totals = {t: written.get(t, 0) for t in tables}
-        if written_totals != expected_totals:
-            raise CountMismatch(sid, expected_totals, written_totals)
-        log_event(_log, "cassandra_write", "ok", batch_id=batch_id, feed=feed, snapshot_id=sid,
-                  rows=written_totals, history_only=history_only)
-        acc = accounting_metrics(stats.get("accounting_json"))
-        for k, v in acc["candidates"].items():
-            ctx.metrics.normalized_candidates.labels(feed=feed, kind=k).inc(v)
-        for k, v in acc["unique"].items():
-            ctx.metrics.unique_records.labels(kind=k).inc(v)
-        for k, v in acc["duplicate"].items():
-            ctx.metrics.duplicate_records.labels(kind=k).inc(v)
-        if int(stats.get("rejected_entity_count") or 0):
-            ctx.metrics.invalid_records.labels(reason="entity_rejected").inc(int(stats["rejected_entity_count"]))
-        if history_only:
-            return man
-        ready_counts = {c: stats.get(c) for c in ("selected_entity_count", "fully_valid_entity_count",
-                                                  "partially_valid_entity_count", "rejected_entity_count",
-                                                  "is_partial", "is_empty")}
-        applied = mark_ready(ctx.session, (ctx.run_id, feed, sid), ready_at=ms_floor(utcnow()),
-                             expected_counts=counts.expected_counts, content_checksum=counts.content_checksum,
-                             accounting_json=str(stats.get("accounting_json") or "{}"), counts=ready_counts)
-        final = read_manifest(ctx.session, ctx.run_id, feed, sid, serial=True)
-        if final is None or final.get("status") != READY:
-            raise ManifestConflict(f"snapshot {sid}: READY transition not applied and manifest is "
-                                   f"{None if final is None else final.get('status')}")
-        log_event(_log, "manifest_ready", "ok" if applied else "reused", batch_id=batch_id, feed=feed,
-                  snapshot_id=sid, generation_id=final.get("generation_id"))
-        return final
+            if out is not None:
+                self._unpersist_output(out)
 
     # ---------------------------------------------------------------- publish (CAS loop)
     def _publish(self, man: Mapping[str, Any], batch_id: int, min_ttl: int) -> tuple[str, bool]:

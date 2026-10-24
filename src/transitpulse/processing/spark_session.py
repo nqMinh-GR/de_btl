@@ -23,6 +23,16 @@ if TYPE_CHECKING:  # pragma: no cover
     from pyspark.sql import SparkSession
 
 _log = get_logger("transitpulse.processing.spark_session")
+# Set only on the benchmark throughput processor. Demo and golden smoke keep the profile flag
+# (Colab leaves whole-stage codegen off; compiling the prediction plan blew the smoke budget).
+WHOLE_STAGE_ENV = "TP_SPARK_WHOLE_STAGE"
+
+
+def _whole_stage_codegen(cfg: ProjectConfig) -> bool:
+    flag = os.environ.get(WHOLE_STAGE_ENV)
+    if flag is None or not str(flag).strip():
+        return bool(cfg.spark.whole_stage_codegen)
+    return str(flag).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _force_utc() -> None:
@@ -49,7 +59,7 @@ def session_conf(
         "spark.driver.memory": cfg.spark.driver_memory,
         "spark.python.worker.reuse": "true",
         "spark.sql.ansi.enabled": "false",          # parse.py relies on NULL (not errors) for bad casts
-        "spark.sql.codegen.wholeStage": "true" if cfg.spark.whole_stage_codegen else "false",
+        "spark.sql.codegen.wholeStage": "true" if _whole_stage_codegen(cfg) else "false",
         "spark.driver.extraJavaOptions": "-Duser.timezone=UTC",
         "spark.executor.extraJavaOptions": "-Duser.timezone=UTC",
         "spark.sql.streaming.metricsEnabled": "false",

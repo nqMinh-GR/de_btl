@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import json
 import statistics
-from collections.abc import Iterable, Mapping
+import time
+import urllib.error
+import urllib.request
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -192,18 +195,70 @@ def visibility_latency(manifests: Iterable[Mapping[str, Any]], start: float, end
     return out
 
 
+def _batch_overlaps(end_ts: float | None, duration_s: float | None, start: float, end: float) -> bool:
+    """A batch counts when ``[timestamp - duration, timestamp]`` overlaps ``[start, end)``.
+
+    Spark records the progress event at the end of the trigger. A batch that starts inside the window and
+    finishes during drain still belongs to the window. Without a duration the timestamp itself must fall inside.
+    """
+    if end_ts is None:
+        return False
+    if duration_s is None:
+        return in_window(end_ts, start, end)
+    return (end_ts - duration_s) < end and end_ts > start
+
+
 def batch_stats(records: Iterable[Any], start: float, end: float) -> dict[str, Any]:
     durs, rows, n = [], 0, 0
     for r in records:
-        ts = _ts(getattr(r, "timestamp", None))
-        if not in_window(ts, start, end):
+        end_ts = _ts(getattr(r, "timestamp", None))
+        duration_s = None if r.duration_ms is None else float(r.duration_ms) / 1000.0
+        if not _batch_overlaps(end_ts, duration_s, start, end):
             continue
         n += 1
-        if r.duration_ms is not None:
-            durs.append(r.duration_ms / 1000.0)
+        if duration_s is not None:
+            durs.append(duration_s)
         rows += int(r.num_input_rows or 0)
-    out = percentiles(durs, unit="s", source="query_progress.jsonl durationMs (triggerExecution)")
+    out = percentiles(durs, unit="s", source="query_progress.jsonl durationMs (triggerExecution); a batch counts when "
+                                            "[timestamp - duration, timestamp] overlaps the window")
     out.update(batches=n, input_rows=rows)
+    return out
+
+
+def probe_http_latency(url: str, *, samples: int = 100, timeout: float = 10.0,
+                       opener: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """Time ``samples`` GETs. This is server time of the request the UI calls, not browser UI latency."""
+    fetch = opener or urllib.request.urlopen
+    vals: list[float] = []
+    errors = 0
+    for _ in range(samples):
+        started = time.perf_counter()
+        resp = None
+        try:
+            resp = fetch(url, timeout=timeout)
+            status = getattr(resp, "status", None)
+            if status is None and hasattr(resp, "getcode"):
+                status = resp.getcode()
+            body = getattr(resp, "read", None)
+            if callable(body):
+                body()
+            if status != 200:
+                errors += 1
+                continue
+        except (OSError, urllib.error.URLError, TimeoutError):
+            errors += 1
+            continue
+        finally:
+            close = getattr(resp, "close", None)
+            if callable(close):
+                close()
+        vals.append(time.perf_counter() - started)
+    out = percentiles(vals, unit="s", source="GET /api/v1/vehicles after drain; server time of the request the UI "
+                                            "calls, not browser UI latency")
+    out["errors"] = errors
+    out["requested"] = samples
+    if not vals and errors:
+        out["reason"] = f"{errors} of {samples} requests failed"
     return out
 
 

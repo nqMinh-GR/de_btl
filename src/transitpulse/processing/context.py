@@ -124,6 +124,7 @@ class GenerationOutput:
     curated: dict[str, DataFrame] = field(default_factory=dict)  # observations|predictions|alerts|entity_quality
     dlq: DataFrame | None = None                 # entity-level DLQ rows (columns == contracts.dlq.DLQ_FIELDS)
     notes: dict[str, Any] = field(default_factory=dict)
+    cache: list[Any] = field(default_factory=list)  # persisted frames to unpersist after the snapshot actions
 
 
 # Which serving tables count per partition in snapshot_manifest.expected_counts ("<table>/<key>").

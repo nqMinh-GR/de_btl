@@ -24,7 +24,8 @@ CSV_COLUMNS = (
     "normalized_candidates_per_s", "unique_records_per_s", "duplicate_fraction", "visibility_latency_p50_s",
     "visibility_latency_p95_s", "visibility_latency_p99_s", "visibility_latency_n", "visibility_latency_max_s",
     "source_age_p50_s", "source_age_p95_s", "batch_duration_p50_s", "batch_duration_p95_s",
-    "cassandra_write_p50_s", "cassandra_write_p95_s", "cpu_total_mean_percent", "cpu_total_max_percent",
+    "cassandra_write_p50_s", "cassandra_write_p95_s", "api_latency_p50_s", "api_latency_p95_s", "api_latency_n",
+    "cpu_total_mean_percent", "cpu_total_max_percent",
     "rss_total_max_mib", "backlog_max_messages", "cassandra_rows_written", "error_rate", "recovery_s", "samples_n",
     "notes",
 )
@@ -70,6 +71,8 @@ def csv_row(r: Mapping[str, Any]) -> dict[str, Any]:
         "source_age_p50_s": _v(m, "source_age", "p50"), "source_age_p95_s": _v(m, "source_age", "p95"),
         "batch_duration_p50_s": _v(m, "batch_duration", "p50"), "batch_duration_p95_s": _v(m, "batch_duration", "p95"),
         "cassandra_write_p50_s": _v(m, "cassandra_write", "p50"), "cassandra_write_p95_s": _v(m, "cassandra_write", "p95"),
+        "api_latency_p50_s": _v(m, "api_latency", "p50"), "api_latency_p95_s": _v(m, "api_latency", "p95"),
+        "api_latency_n": _v(m, "api_latency", "n"),
         "cpu_total_mean_percent": _v(m, "resources", "total", "cpu_mean_percent"),
         "cpu_total_max_percent": _v(m, "resources", "total", "cpu_max_percent"),
         "rss_total_max_mib": _v(m, "resources", "total", "rss_max_mib"),
@@ -120,7 +123,22 @@ def _section(results: list[Mapping[str, Any]], title: str) -> list[str]:
             f"{_fmt(_v(m, 'batch_duration', 'p95'))} | {_fmt(_v(m, 'resources', 'total', 'cpu_max_percent'), 1)} | "
             f"{_fmt(_v(m, 'resources', 'total', 'rss_max_mib'), 0)} | {_fmt(_v(m, 'backlog', 'max'))} |")
     notes = [f"* {r['scenario']} rep {r['repetition']}: {n}" for r in results for n in (r.get("notes") or [])]
-    return lines + [""] + (["Notes:", ""] + notes + [""] if notes else [])
+    api_lines = []
+    for r in results:
+        api = (r.get("metrics") or {}).get("api_latency") or {}
+        if not api:
+            continue
+        detail = api.get("reason") or ""
+        api_lines.append(
+            f"* {r['scenario']} rep {r['repetition']} API latency p50 / p95 (n={api.get('n', 0)}): "
+            f"{_fmt(api.get('p50'))} / {_fmt(api.get('p95'))} s. {detail}".rstrip()
+        )
+    extra = []
+    if notes:
+        extra += ["Notes:", ""] + notes
+    if api_lines:
+        extra += ["", "API latency (server time of GET /vehicles; not browser UI latency):", ""] + api_lines
+    return lines + [""] + (extra + [""] if extra else [])
 
 
 def benchmark_report_md(doc: Mapping[str, Any]) -> str:
@@ -178,7 +196,8 @@ def benchmark_report_md(doc: Mapping[str, Any]) -> str:
               "warm-up, D-PUB-08); OS page cache is not controlled;",
               "* processor rates come from textfile metrics exported every few seconds, so window edges are "
               "approximate by up to one export interval;",
-              "* API latency and UI latency are not part of this protocol and are not reported.", ""]
+              "* API latency is 100 GETs of /api/v1/vehicles after the drain (server time of the request the UI calls). "
+              "Browser UI latency is not measured.", ""]
     return "\n".join(lines)
 
 
