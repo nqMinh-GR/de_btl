@@ -1,0 +1,178 @@
+ \documentclass{article}
+
+%------------------------- packages -------------------------%
+\PassOptionsToPackage{obeyspaces,spaces}{url}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{vietnam}
+\usepackage[unicode,hidelinks]{hyperref}    % for reference
+\usepackage{geometry}   % for layout
+\usepackage{amsmath}    % for math
+\usepackage{amssymb}    % for math symbol
+\usepackage{xcolor}     % for color
+% for figure
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit}
+% for code
+\usepackage{minted}
+% for table
+\usepackage{float}
+\usepackage{paracol}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{multicol}
+% for header & footer
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{adjustbox}
+%------------------------- set up -------------------------%
+% renewed names
+\AtBeginDocument{\renewcommand*\contentsname{Mục lục}}
+\AtBeginDocument{\renewcommand*\refname{Tham khảo}}
+\newcommand{\tab}{\hspace*{1cm}}
+% figure
+\graphicspath{{./img/}}              % path to image
+\captionsetup[figure]{labelfont={small,bf,it},textfont={small,it}}
+\captionsetup[table]{labelfont={small,bf},textfont={small}}
+% paragraph
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{12pt}
+\setlength{\parskip}{6pt}               % disables indentation
+\renewcommand{\baselinestretch}{1.5}    % line spacing
+\setlength{\tabcolsep}{8pt}
+\setlength{\emergencystretch}{3em}
+% color
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+% code
+\def\code#1{\texttt{#1}}    % font
+\newcommand{\ident}[1]{\path{#1}}   % identifier: verbatim, breakable after _ / . (not in captions/titles)
+\newcommand{\tablefont}{\small\linespread{1.1}\selectfont}
+\usemintedstyle{vs}         % minted theme
+\setminted{
+    autogobble,             % remove all common leading whitespace
+    baselinestretch=1.0,
+    bgcolor=gray!5!white,
+    breaklines,
+    %linenos,               % enables line numbers
+    fontsize=\footnotesize
+}
+\hypersetup{
+    colorlinks = true,
+    urlcolor = blue,
+    linkcolor = black,
+}
+
+%------------------------- layout & margin -------------------------%
+\geometry{
+    a4paper,        % redundant if already in \documentclass
+    left=20.32mm,
+    right=20.32mm,
+    top=25.40mm,
+    bottom=25.40mm,
+    heightrounded,  % better use it
+}
+
+%------------------------- header & footer -------------------------%
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.5pt}
+\setlength{\headheight}{24.5pt}
+\pagestyle{fancy}
+
+\fancyhead{}    % clear all header fields
+\fancyhead[L]{
+    \begin{tabular}{ll}
+        \begin{picture}(10,10)
+            \put(0,-7){\includegraphics[width=8mm]{img/hcmut.png}}
+        \end{picture}&
+    	\begin{tabular}{l}
+    	    {\ttfamily Trường Đại học Bách Khoa Tp. Hồ Chí Minh} \\
+    	    {\ttfamily Khoa Khoa học và Kỹ thuật Máy tính} \\
+    	\end{tabular}
+    \end{tabular}
+}
+
+\fancyfoot{}    % clear all footer fields
+\fancyfoot[R]{\footnotesize {\ttfamily Trang {\thepage}/\pageref{LastPage}}}
+% might change to \scriptsize
+
+%------------------------- body -------------------------%
+\begin{document}
+
+%-------------------- cover --------------------%
+\begin{titlepage}
+\begin{center}
+     \large ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH\\
+    TRƯỜNG ĐẠI HỌC BÁCH KHOA\\
+    KHOA KHOA HỌC VÀ KỸ THUẬT MÁY TÍNH
+\end{center}
+
+\vspace{1.0cm}
+
+\begin{figure}[!ht]
+    \centering \includegraphics[width=5cm]{img/hcmut.png}
+\end{figure}
+
+\vspace{1.0cm}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c}
+    {\bf \Large Báo cáo kỹ thuật}    \\
+    \\
+    \hline  \\
+    {\bf \large TransitPulse MBTA} \\
+    {\large Giám sát xe buýt thời gian thực và cảnh báo trễ dự kiến} \\
+    {\large với Kafka, Spark Structured Streaming và Cassandra} \\
+    \\
+    \hline
+    \end{tabular}
+\end{table}
+
+\vspace{1.0cm}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrll}
+& Môn học:      & Data Engineering          &         \\
+% TODO: điền tên giảng viên phụ trách môn học
+& Giảng viên:   & \textit{[Tên giảng viên]} &         \\
+& Thành viên:   & Nguyễn Quang Minh         & 2570784 \\
+&               & Trần Mậu Thật             & 2670373 \\
+&               & Trần Trung Anh            & 2670252 \\
+&               & Nguyễn Quỳnh Trang        & 2670382 \\
+\end{tabular}
+\end{table}
+
+\vspace{1.0cm}
+
+\begin{center}
+    \footnotesize Thành phố Hồ Chí Minh, tháng 10 năm 2026
+\end{center}
+\end{titlepage}
+
+\newpage
+%-------------------- mission --------------------%
+
+\newpage
+%-------------------- contents --------------------%
+\tableofcontents
+\include{section/1_intro}
+\include{section/2_problem}
+\include{section/3_design}
+\include{section/4_experiments}
+\include{section/5_conclusion}
+
+\include{section/ref}
+\newpage
+%-------------------- main --------------------%
+\newpage
+\end{document}

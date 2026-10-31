@@ -1,0 +1,73 @@
+\section{Giới thiệu}
+
+\subsection{Bối cảnh}
+
+Để theo dõi hoạt động của xe buýt, hệ thống cần kết hợp lịch trình với dữ liệu vận hành thực tế. Lịch trình tĩnh theo chuẩn GTFS Schedule \cite{gtfs_static} cung cấp thông tin về tuyến, trạm, chuyến, giờ chạy và hình dạng tuyến đường. Dữ liệu theo chuẩn GTFS Realtime \cite{gtfs_rt} bổ sung ba luồng cập nhật, gọi là \textit{feed}: vị trí xe (Vehicle Positions), dự báo giờ đến và rời trạm (Trip Updates), cùng cảnh báo dịch vụ (Service Alerts). Massachusetts Bay Transportation Authority (MBTA), đơn vị vận hành giao thông công cộng tại khu vực Boston, công bố hai loại dữ liệu này dưới dạng tệp ZIP và JSON để người dùng có thể truy cập công khai \cite{mbta_gtfs}.
+
+Dữ liệu thời gian thực được cập nhật liên tục nhưng có thể thiếu trường, đến trễ, ngừng cập nhật hoặc lặp lại nội dung đã nhận. Vì vậy, chỉ hiển thị phản hồi mới nhất từ nguồn là chưa đủ. Hệ thống còn cần làm rõ:
+\begin{itemize}
+    \item Vị trí xe được ghi nhận lúc nào và còn đủ mới để sử dụng hay không?
+    \item Giờ đến trạm là dự báo từ dữ liệu thời gian thực hay chỉ là giờ theo lịch trình?
+    \item Kết quả đang hiển thị đã được xử lý đầy đủ hay còn thiếu do quá trình ghi dữ liệu bị gián đoạn?
+\end{itemize}
+
+Từ các yêu cầu trên, nhóm xây dựng TransitPulse MBTA trong khuôn khổ đồ án môn Data Engineering. Hệ thống sử dụng Apache Cassandra \cite{cassandra} để lưu trữ và quản lý dữ liệu, Apache Spark Structured Streaming \cite{spark,structured_streaming} để xử lý dữ liệu luồng, Apache Kafka để chuyển các sự kiện giữa các thành phần và FastAPI để cung cấp kết quả cho giao diện người dùng.
+
+\subsection{Mục tiêu}
+
+Mục tiêu của dự án là xây dựng một quy trình hoàn chỉnh: thu thập dữ liệu xe buýt MBTA, xử lý qua chuỗi \textbf{Kafka $\rightarrow$ Spark Structured Streaming $\rightarrow$ Cassandra}, sau đó cung cấp kết quả qua FastAPI cho giao diện React, bảng theo dõi Streamlit và notebook trên Google Colab. Bên cạnh việc hiển thị kết quả, hệ thống cần đáp ứng các yêu cầu về độ tin cậy của dữ liệu:
+
+\begin{itemize}
+    \item \textbf{Quản lý phiên bản}: mỗi kết quả được gắn với một lần chạy (\textit{run}), một bản chụp dữ liệu nguồn (\textit{snapshot}) và một phiên bản dữ liệu phục vụ truy vấn (\textit{generation}). Khi đã tạo, nội dung của generation không thay đổi.
+    \item \textbf{Phân biệt các mốc thời gian}: thời điểm ghi nhận vị trí xe, thời điểm tạo feed và thời điểm hệ thống xử lý được lưu riêng để tránh nhầm lẫn khi đánh giá độ mới của dữ liệu.
+    \item \textbf{Kiểm soát chất lượng}: các bản ghi bị loại, cách ly hoặc xác định là trùng lặp đều có mã lý do và tham chiếu đến dữ liệu gốc.
+    \item \textbf{Phục hồi khi có lỗi}: quá trình xử lý lại cần giữ nguyên kết quả logic, tránh hiển thị dữ liệu ghi dở, đếm trùng KPI hoặc thay thế trạng thái mới bằng dữ liệu cũ.
+    \item \textbf{Truy vết nguồn gốc}: từ kết quả trên API có thể xác định Kafka offset, tệp dữ liệu gốc và giá trị kiểm tra toàn vẹn (checksum) của lần thu thập tương ứng.
+\end{itemize}
+
+\subsection{Người dùng và câu hỏi nghiệp vụ}
+
+Bảng~\ref{tab:users} liệt kê bốn nhóm người dùng và thông tin mà mỗi nhóm cần.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Người dùng mục tiêu của TransitPulse}
+\label{tab:users}
+\begin{tabular}{p{3.10cm}p{6.01cm}p{6.01cm}}
+\toprule
+\textbf{Vai trò} & \textbf{Câu hỏi cần trả lời} & \textbf{Thông tin hệ thống cung cấp} \\
+\midrule
+Hành khách & Xe ở đâu, khi nào tới trạm, tuyến có gián đoạn không & Bản đồ xe theo tuyến, ETA theo trạm có nhãn chất lượng, cảnh báo dịch vụ \\
+Người theo dõi vận hành & Tuyến nào có dự báo chậm, bao nhiêu xe có vị trí mới & KPI ``độ trễ dự kiến'' kèm tử số, mẫu số và thời điểm tính \\
+Kỹ sư dữ liệu & Nguồn còn cập nhật không, lỗi ở bước nào, có dữ liệu chờ xử lý không & Trang chất lượng và trạng thái xử lý, hàng đợi lỗi (DLQ), tham chiếu dữ liệu gốc và thông tin truy vết \\
+Người đánh giá & Dữ liệu có đi qua Kafka, Spark, Cassandra và cho kết quả đúng không & Kiểm thử golden smoke, báo cáo kiểm thử, kịch bản lỗi và kết quả đo hiệu năng \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Phạm vi}
+
+Phiên chạy thử đã thực hiện trên \textbf{10 tuyến xe buýt} của MBTA (\ident{route_type=3}): \ident{1}, \ident{15}, \ident{22}, \ident{23}, \ident{28}, \ident{32}, \ident{39}, \ident{57}, \ident{66} và \ident{77}. Danh sách tuyến được đối chiếu với GTFS tại thời điểm chạy. Mỗi lần chạy sử dụng một phiên bản GTFS cố định. Hệ thống hỗ trợ ba chế độ, cùng đi qua một quy trình xử lý:
+\begin{itemize}
+    \item \textbf{live}: thu thập trực tiếp ba feed MBTA theo chu kỳ 30 giây;
+    \item \textbf{replay}: phát lại dữ liệu đã ghi ở tốc độ 1x, 10x hoặc 50x, có thể tạm dừng và tiếp tục;
+    \item \textbf{synthetic}: phát dữ liệu mô phỏng được sinh theo quy tắc tất định. Dữ liệu này mang nhãn \ident{source_type=synthetic} và không được hiển thị như dữ liệu xe MBTA thực tế.
+\end{itemize}
+
+Dự án chưa xây dựng mô hình dự báo giờ đến trạm (ETA) riêng, chưa đánh giá độ chính xác ETA do thiếu dữ liệu thực tế làm đối chứng (ground truth), và chưa thực hiện tối ưu hành trình hay đếm hành khách. Hạ tầng có tính sẵn sàng cao và triển khai trên nhiều vùng cũng nằm ngoài phạm vi đồ án. ETA hiển thị được lấy từ dự báo của MBTA. Trong báo cáo, ``độ trễ dự kiến'' được hiểu là chênh lệch giữa giờ dự báo và giờ theo lịch GTFS; chỉ số này không thể hiện độ trễ thực tế hoặc chỉ số đúng giờ chính thức của MBTA.
+
+\subsection{Đóng góp chính}
+
+\begin{enumerate}
+    \item Xây dựng quy trình xử lý từ đầu đến cuối trên máy ảo Google Colab. Các thành phần được chạy trực tiếp bằng tệp nhị phân, không cần Docker hay quyền sudo, gồm Kafka 4.2.2 (KRaft), Cassandra 5.0.9, Spark 3.5.7, bộ thu thập dữ liệu, FastAPI và ba loại giao diện.
+    \item Thiết kế cơ chế công bố dữ liệu dựa trên generation bất biến. Bản mô tả generation (manifest) ghi nhận trạng thái \ident{BUILDING}/\ident{READY}, còn con trỏ \ident{feed_current} được cập nhật bằng compare-and-set, sử dụng lightweight transaction của Cassandra. Trong điều kiện không có giao dịch chung giữa Kafka, hệ thống tệp và Cassandra, cách làm này hỗ trợ giao nhận ít nhất một lần (at-least-once), đồng thời cho phép ghi và công bố lại mà không thay đổi kết quả logic (idempotent).
+    \item Xây dựng các mã định danh tất định (\ident{snapshot_id}, \ident{observation_id}, \ident{prediction_id}, \ldots), cho kết quả thống nhất trên Python và Spark. Nhờ đó, việc thử lại hoặc phát lại dữ liệu không tạo thêm bản ghi trùng.
+    \item Phân biệt đồng hồ nguồn, đồng hồ hệ thống và đồng hồ nghiệp vụ; xử lý giờ GTFS vượt 24:00 và ngày chuyển đổi giờ mùa hè (DST).
+    \item Tính KPI độ trễ dự kiến theo quy tắc chọn một trạm mục tiêu (\textit{target stop}) cho mỗi chuyến. Kết quả đi kèm tử số, mẫu số, các lý do loại trừ và thời điểm tính để người đọc có thể kiểm tra.
+    \item Xây dựng nhiều lớp kiểm chứng: bộ dữ liệu mẫu có kết quả kỳ vọng được xác định thủ công (golden fixture), bộ tính kết quả đối chứng độc lập (oracle) chỉ dùng thư viện chuẩn Python, các kịch bản chủ động gây lỗi (fault injection) và bộ công cụ đo hiệu năng (benchmark) chỉ ghi nhận số đo thực tế.
+\end{enumerate}
+
+\subsection{Cấu trúc báo cáo}
+
+Phần~\ref{sec:problem} trình bày nguồn dữ liệu, các khó khăn kỹ thuật, yêu cầu hệ thống và cách tính các chỉ số. Phần~\ref{sec:design} mô tả kiến trúc cùng thiết kế của từng thành phần, từ thu thập, chuyển và xử lý dữ liệu đến lưu trữ trên Cassandra, công bố kết quả và vận hành. Phần~\ref{sec:experiments} trình bày phương pháp kiểm chứng, kết quả chạy thực tế, giao diện và các phép đo hiệu năng trên Google Colab. Cuối cùng, Phần~\ref{sec:conclusion} tổng kết kết quả, nêu hạn chế và đề xuất hướng phát triển. Mã nguồn của dự án được công bố tại \cite{repo}.

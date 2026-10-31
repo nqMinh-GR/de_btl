@@ -1,0 +1,563 @@
+\section{Kiến trúc và thiết kế hệ thống}
+\label{sec:design}
+
+\subsection{Tổng quan kiến trúc}
+
+Kiến trúc tổng thể của hệ thống được trình bày trong Hình~\ref{fig:arch}, gồm hai luồng dữ liệu chính. \textbf{Luồng dữ liệu tĩnh} xử lý tệp GTFS ZIP bằng Spark batch để tạo các bảng dữ liệu tham chiếu (dimension) ở dạng Parquet và danh mục dữ liệu tĩnh trong Cassandra. \textbf{Luồng dữ liệu thời gian thực} thu thập ba luồng cập nhật (feed) JSON, chuyển qua Kafka rồi xử lý bằng Spark Structured Streaming. Kết quả được lưu thành các phiên bản dữ liệu phục vụ truy vấn bất biến (generation) trong Cassandra và dữ liệu lịch sử đã xử lý (curated) ở dạng Parquet.
+
+Dữ liệu phát lại (replay) và dữ liệu mô phỏng (synthetic) được gửi vào cùng topic Kafka với dữ liệu trực tiếp (live), nên cả ba chế độ dùng chung một quy trình xử lý. Giao diện lấy kết quả thông qua FastAPI; việc đọc Kafka, dữ liệu gốc (raw) và các feed MBTA được thực hiện ở các tầng phía sau.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, align=center, font=\scriptsize, minimum width=2.6cm, minimum height=1.0cm, fill=#1},
+  box/.default=white,
+  arr/.style={-{Stealth[length=2mm]}, thick},
+  darr/.style={-{Stealth[length=2mm]}, thick, dashed},
+  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+\node[box=gray!12] (gtfs) at (0,2.6) {GTFS Static ZIP};
+\node[box=gray!12] (rt)   at (0,0)   {MBTA GTFS-RT JSON\\VP $\cdot$ TU $\cdot$ Alerts};
+\node[box=gray!12] (rec)  at (0,-2.6) {Recording /\\synthetic};
+\node[box=blue!8] (loader) at (3.4,2.6) {Static loader\\(Spark batch)};
+\node[box=blue!8] (coll)   at (3.4,0)   {Collector\\raw archive + outbox};
+\node[box=blue!8] (pub)    at (3.4,-2.6) {Replay publisher\\(source clock)};
+\node[box=green!12] (dims)  at (6.8,2.6) {\texttt{dim\_*} Parquet\\(1 version / run)};
+\node[box=orange!18] (kafka) at (6.8,0)   {Kafka (KRaft)\\5 topics};
+\node[box=red!10, minimum height=1.7cm] (spark) at (10.2,0) {Spark Structured\\Streaming\\\texttt{foreachBatch}};
+\node[box=green!12] (cass) at (13.6,1.5)  {Cassandra\\generations + pointer};
+\node[box=green!12] (cur)  at (13.6,-1.5) {Curated Parquet\\(\texttt{\_COMMITTED})};
+\node[box=red!10]   (rep)  at (13.6,-3.5) {Spark batch\\report (FR09)};
+\node[box=blue!8]   (api)  at (17.0,1.5)  {FastAPI\\\texttt{/api/v1}};
+\node[box=gray!12]  (ui)   at (17.0,-1.5) {React $\cdot$ Streamlit\\Notebook UI};
+\draw[arr] (gtfs) -- (loader);
+\draw[arr] (loader) -- (dims);
+\draw[arr] (rt) -- (coll);
+\draw[arr] (coll) -- (kafka);
+\draw[arr] (rec) -- (pub);
+\draw[arr] (pub) -- (kafka);
+\draw[arr] (dims) -| (spark);
+\draw[arr] (kafka) -- (spark);
+\draw[arr] ([yshift=4mm]spark.east) -- (cass.west);
+\draw[arr] ([yshift=-4mm]spark.east) -- (cur.west);
+\draw[arr] (cur) -- (rep);
+\draw[arr] (cass) -- (api);
+\draw[arr] (api) -- (ui);
+\draw[arr] (loader.north) |- ++(0,0.7) -| node[lab, pos=0.25] {static catalog} (cass.north);
+\draw[darr] (spark.south) |- ++(0,-0.7) -| node[lab, pos=0.25] {DLQ} (kafka.south);
+\draw[darr] (coll.south west) to[out=-120,in=60] node[lab, left] {ghi recording} (rec.north east);
+\end{tikzpicture}}
+\caption{Kiến trúc tổng thể của TransitPulse MBTA. Mũi tên nét đứt là luồng phụ (DLQ, ghi recording).}
+\label{fig:arch}
+\end{figure}
+
+Bảng~\ref{tab:paths} tóm tắt luồng đi và mục đích sử dụng của từng nhóm dữ liệu.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Các đường dữ liệu trong hệ thống}
+\label{tab:paths}
+\begin{tabular}{p{2.32cm}p{8.34cm}p{4.46cm}}
+\toprule
+\textbf{Nhóm} & \textbf{Luồng xử lý} & \textbf{Mục đích} \\
+\midrule
+Dữ liệu tĩnh & ZIP $\rightarrow$ phiên bản SHA-256 $\rightarrow$ Spark batch kiểm tra $\rightarrow$ \texttt{dim\_*} Parquet + bảng tĩnh Cassandra & Lịch, tuyến, trạm, hình học tuyến theo phiên bản bất biến \\
+Thời gian thực & JSON $\rightarrow$ raw + outbox $\rightarrow$ Kafka $\rightarrow$ Spark $\rightarrow$ Cassandra + curated & Vị trí xe, dự báo và cảnh báo \\
+Phục vụ & Cassandra $\rightarrow$ FastAPI $\rightarrow$ React / Streamlit / notebook & Cung cấp dữ liệu đã xử lý \\
+Phát lại & Recording + đúng phiên bản GTFS $\rightarrow$ publisher $\rightarrow$ cùng Kafka/Spark/API & Demo lặp lại, chạy ngoại tuyến và benchmark \\
+Chất lượng & Lỗi phân tích/kiểm tra $\rightarrow$ DLQ (trích đoạn $\le$ 2 KiB + tham chiếu dữ liệu gốc) + \texttt{quality\_by\_snapshot} & Tra cứu và điều tra lỗi \\
+Báo cáo batch & Curated Parquet $\rightarrow$ Spark batch (loại trùng, cửa sổ thời gian) $\rightarrow$ báo cáo & Phân tích dữ liệu lịch sử \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Công nghệ sử dụng}
+
+Các thư viện phụ thuộc, image và gói cài đặt đều được cố định phiên bản để việc triển khai có thể lặp lại. Bảng~\ref{tab:stack} liệt kê các công nghệ được sử dụng; hệ thống không dùng nhãn \ident{latest}.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Bộ công nghệ và phiên bản}
+\label{tab:stack}
+\begin{tabular}{p{3.49cm}p{6.21cm}p{5.43cm}}
+\toprule
+\textbf{Thành phần} & \textbf{Công nghệ (phiên bản)} & \textbf{Vai trò} \\
+\midrule
+Ngôn ngữ lõi & Python 3.11.17 (quản lý bởi uv 0.12.23) & Toàn bộ backend \\
+JVM & Eclipse Temurin JDK 17.0.20.1+1 & Kafka, Cassandra, Spark \\
+Xử lý dữ liệu & Spark/PySpark 3.5.7 (Scala 2.12), \texttt{spark-sql-kafka-0-10\_2.12:3.5.7} & Xử lý dữ liệu tĩnh, luồng và báo cáo batch \\
+Trung chuyển & Apache Kafka 4.2.2 (KRaft, 1 node) & Vận chuyển snapshot, control, DLQ \\
+CSDL phục vụ & Apache Cassandra 5.0.9 (1 node, RF1) & Generation, pointer, lịch sử, danh mục tĩnh \\
+Client & confluent-kafka 2.15.1, cassandra-driver 3.30.1, httpx 0.28.1 & Gửi Kafka, truy vấn CQL, thu thập HTTP \\
+API & FastAPI 0.142.2, Pydantic 2.13.5, uvicorn 0.54.0 & REST \texttt{/api/v1} \\
+Giao diện & React 18 + MapLibre, Streamlit 1.65.0 + PyDeck 0.9.3, ipywidgets & Console, dashboard, notebook UI \\
+Kiểm thử & pytest 9.1.1, Ruff 0.16.10, nbformat 5.11.1 & Kiểm thử, kiểm tra mã và notebook \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hệ thống sử dụng Python 3.11 do \ident{cassandra-driver} cần module \ident{asyncore} khi không có \ident{libev}, trong khi Python 3.12 đã loại bỏ module này. Phiên bản này cũng phù hợp với Spark 3.5.7, vốn hỗ trợ Python 3.8--3.11 và Java 8/11/17. Kafka 4.x yêu cầu Java 17 trở lên. Về quy mô mã nguồn, dự án có khoảng 43\,900 dòng Python trong \ident{src/}, 18\,300 dòng kiểm thử, 2\,700 dòng giao diện React và 1\,800 dòng dashboard Streamlit.
+
+\subsection{Định danh và hợp đồng dữ liệu}
+
+\subsubsection{Định danh tất định}
+
+Các định danh được tạo theo quy tắc tất định: cùng dữ liệu đầu vào sẽ cho cùng kết quả. Nhờ đó, việc thử lại (retry) hoặc phát lại dữ liệu không tạo thêm bản ghi trùng. Hệ thống sử dụng hàm băm
+\begin{equation}
+H(s) = \text{SHA-256}(s)[0{:}32], \qquad K(p_1,\ldots,p_n) = p_1 \,\|\, \texttt{\textbackslash x1f} \,\|\, p_2 \,\|\, \cdots \,\|\, p_n,
+\end{equation}
+trong đó các thành phần được nối bằng ký tự phân cách \texttt{\textbackslash x1f}, còn giá trị \ident{null} được biểu diễn bằng \texttt{\textbackslash x00}. Quy tắc này tránh việc hàm \ident{concat_ws} của Spark bỏ qua \ident{null}, khiến hai bộ giá trị khác nhau có cùng ID. Trước khi băm, các số thực được đưa về số nguyên theo hệ số cố định: vĩ độ và kinh độ nhân $10^7$, hướng di chuyển (bearing) nhân $10^2$, tốc độ nhân $10^3$. Cách biểu diễn thống nhất giúp Python và Spark tạo ra cùng kết quả. Các định danh chính được liệt kê trong Bảng~\ref{tab:ids}.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Các định danh chính}
+\label{tab:ids}
+\begin{tabular}{p{2.91cm}p{7.37cm}p{4.85cm}}
+\toprule
+\textbf{Định danh} & \textbf{Cách tạo} & \textbf{Mục đích} \\
+\midrule
+\texttt{run\_id} & uuid4, tạo một lần cho mỗi run & Tách Kafka key, checkpoint, raw, outbox và bảng phục vụ theo run \\
+\texttt{gtfs\_version} & SHA-256 của nội dung ZIP & Cố định một phiên bản lịch cho mỗi run \\
+\texttt{scope\_id} & SHA-256(route IDs đã sắp, route\_type, scope policy, gtfs\_version)[:16] & Phân biệt phạm vi xử lý \\
+\texttt{capture\_id} & \texttt{<vp|tu|al>-<UTC $\mu$s>Z-<sha256[:12]>} & Một lần thu thập HTTP \\
+\texttt{snapshot\_id} & \texttt{sn\_} + $H$(run, scope, feed, header.ts, SHA-256 nội dung đã lọc) & Nhận diện snapshot logic; giữ ID khi thử lại \\
+\texttt{generation\_id} & \texttt{gn\_} + $H$(run, feed, snapshot, pipeline\_version) & Phiên bản dữ liệu phục vụ bất biến \\
+\texttt{observation\_id} & \texttt{ob\_} + $H$(xe, descriptor, timestamp, vị trí lượng tử hóa, stop/status) & Thu thập lại không tạo lịch sử trùng \\
+\texttt{prediction\_id} & \texttt{pr\_} + $H$(trip, start\_date, start\_time, route, direction, stop\_sequence, stop\_id, event\_type) & Một dự báo của một lần ghé trạm \\
+\texttt{source\_order} & \texttt{\%012d.\%017d.\%s} (feed ts, capture $\mu$s, snapshot\_id) & Xác định thứ tự nguồn khi CAS pointer \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Mỗi snapshot là một bản chụp nội dung của feed. Định danh \ident{snapshot_id} không chứa \ident{published_at}, \ident{capture_id} hay UUID của lần thử lại, nên hai lần thu thập có cùng nội dung logic sẽ cho cùng định danh. Trường \ident{source_order} có độ rộng cố định, giúp việc so sánh chuỗi tương đương với so sánh lần lượt thời điểm feed, thời điểm thu thập và ID. Con trỏ dữ liệu hiện tại (pointer) dựa vào thứ tự này để chọn snapshot mới hơn, thay cho thứ tự nhận dữ liệu hoặc thời điểm ghi vào Cassandra.
+
+\subsubsection{Envelope Kafka}
+
+Sau khi lọc theo phạm vi xử lý, mỗi snapshot được đóng gói thành một thông điệp JSON (envelope) theo schema version 1. Thông điệp gồm năm nhóm trường:
+\begin{itemize}
+    \item phiên bản và phạm vi định danh: \ident{run_id}, \ident{scope_id}, \ident{source_type}, \ident{feed_type}, \ident{gtfs_version};
+    \item thông tin truy vết nguồn gốc: \ident{snapshot_id}, \ident{capture_id}, \ident{raw_path}, \ident{raw_sha256}, \ident{raw_bytes};
+    \item các mốc thời gian: \ident{feed_timestamp}, \ident{original_fetched_at}, \ident{published_at};
+    \item số lượng bản ghi để đối chiếu: \ident{source_entity_count}, \ident{selected_entity_count};
+    \item nội dung dữ liệu: \ident{header} và \ident{entities}, được giữ nguyên dạng gốc.
+\end{itemize}
+Kích thước sau khi tuần tự hóa tối đa là 4 MiB. Nếu vượt giới hạn, dữ liệu gốc vẫn được lưu và hệ thống ghi mã \texttt{PAYLOAD\_TOO\_LARGE}. Thông điệp đó không được gửi sang Kafka, đồng thời nội dung cũng không bị cắt bớt.
+
+\subsection{Mô hình thời gian và đồng hồ}
+
+Các mốc thời gian được lưu riêng theo ý nghĩa của chúng, như trình bày trong Bảng~\ref{tab:clocks}. Cách tổ chức này dựa trên sự phân biệt giữa thời điểm sự kiện xảy ra (event time) và thời điểm hệ thống xử lý (processing time) trong mô hình Dataflow \cite{dataflow}.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Các mốc thời gian và đồng hồ tương ứng}
+\label{tab:clocks}
+\begin{tabular}{p{3.49cm}p{8.34cm}p{3.30cm}}
+\toprule
+\textbf{Trường} & \textbf{Ý nghĩa} & \textbf{Đồng hồ} \\
+\midrule
+\texttt{observation\_time} & Thời điểm nguồn đo vị trí xe; có thể thiếu & Nguồn \\
+\texttt{feed\_timestamp} & Thời điểm header của feed; không chứng minh xe vừa được đo & Nguồn \\
+\texttt{original\_fetched\_at} & Thời điểm thu thập gốc; giữ nguyên khi replay & Thực (lịch sử) \\
+\texttt{published\_at} & Thời điểm đưa vào Kafka trong run hiện tại & Thực \\
+\texttt{view\_published\_at} & Thời điểm generation lần đầu được phép đọc & Thực \\
+\texttt{application\_clock} & Đồng hồ thực cho live, đồng hồ lịch sử cho replay/synthetic & Nghiệp vụ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Từ các mốc trên, hệ thống phân biệt độ trễ xử lý và tuổi dữ liệu nguồn:
+\begin{align}
+\text{pipeline\_visibility\_latency} &= \texttt{view\_published\_at} - \texttt{published\_at}, \\
+\text{source\_observation\_age} &= \texttt{application\_clock} - \texttt{observation\_time}.
+\end{align}
+Đại lượng thứ nhất đo thời gian từ khi dữ liệu được gửi vào Kafka đến khi có thể đọc qua API, sử dụng đồng hồ thực (wall clock) của lần chạy hiện tại. Khoảng đo này không bao gồm thời gian chờ đến lần thu thập tiếp theo. Đại lượng thứ hai cho biết vị trí xe đã được ghi nhận cách thời điểm đánh giá bao lâu, nên phản ánh độ mới của dữ liệu nguồn.
+
+Trong chế độ live, đồng hồ nghiệp vụ lấy giờ UTC hiện tại. Với replay và synthetic, thành phần phát dữ liệu (publisher) gửi sự kiện \ident{clock_tick} trước mỗi mục dữ liệu và mỗi giây thực trong thời gian chờ. Mỗi sự kiện có \ident{clock_sequence} tăng dần. Bộ xử lý (processor) chỉ chấp nhận sự kiện khi \ident{clock_sequence} lớn hơn giá trị trước đó \textbf{và} \ident{source_clock} không lùi; điều kiện được kiểm tra bằng LWT trên \ident{run_metadata}. Khi tạm dừng phát lại, đồng hồ nghiệp vụ dừng theo, còn tín hiệu duy trì hoạt động (heartbeat) vẫn chạy theo đồng hồ thực. Giờ dự báo đến trạm không được dùng làm đồng hồ của hệ thống.
+
+\subsection{Thu thập dữ liệu và hàng đợi gửi bền vững}
+
+Bộ thu thập (collector) truy vấn độc lập ba feed theo chu kỳ 30 giây, mỗi feed sử dụng một HTTP client riêng. Thời gian chờ tối đa được đặt cho từng bước: kết nối 5 s, đọc 20 s, ghi 5 s và chờ lấy kết nối từ pool 5 s. Mỗi yêu cầu được thử tối đa 3 lần. Với lỗi tạm thời, khoảng chờ trước khi thử lại được tăng dần và ngẫu nhiên hóa theo công thức
+\begin{equation}
+\delta_k = \min(10,\ 1 \cdot 2^k)\cdot U(0{,}5;\,1{,}5) \text{ giây},
+\end{equation}
+Collector cũng tuân theo header \ident{Retry-After} với giới hạn 300 giây. Nếu bỏ lỡ một lượt thu thập, hệ thống chuyển sang lượt kế tiếp để tránh dồn yêu cầu. Một lần thu thập thành công được xử lý theo thứ tự sau:
+
+\begin{enumerate}
+    \item \textbf{Lưu dữ liệu gốc trước khi gửi Kafka.} Nội dung phản hồi sau giải mã được nén gzip với \ident{mtime=0} để tạo kết quả tất định, kèm mã SHA-256 và tệp metadata đi cùng. Dung lượng dành cho dữ liệu gốc là 2 GiB. Khi vượt giới hạn, collector dừng thay vì tự xóa dữ liệu.
+    \item \textbf{Chuẩn bị thông điệp.} Collector lọc sơ bộ theo các tuyến thuộc phạm vi xử lý, tính \ident{snapshot_id} và tạo envelope.
+    \item \textbf{Lưu vào hàng đợi gửi.} Envelope được ghi vào outbox SQLite của lần chạy, với \ident{journal_mode=WAL}, \ident{synchronous=FULL} và trạng thái ban đầu là \ident{pending}. Khóa \ident{flock} ngăn hai collector chạy đồng thời trong cùng một run.
+    \item \textbf{Gửi sang Kafka.} Bộ phận chuyển tiếp (dispatcher) gửi thông điệp tới broker. Trạng thái \ident{published} chỉ được ghi khi producer nhận xác nhận trong delivery callback, kèm partition và offset do broker trả về.
+\end{enumerate}
+
+Quy trình trên áp dụng mẫu transactional outbox \cite{microservices_patterns}. Nếu collector dừng đột ngột sau khi broker xác nhận nhưng trước khi cập nhật SQLite, thông điệp sẽ được gửi lại với cùng \ident{capture_id} và \ident{snapshot_id}. Các định danh tất định giúp tầng xử lý nhận biết lần gửi lặp này.
+
+Nếu xảy ra lỗi như hết thời gian chờ, JSON hỏng, header sai hoặc \ident{incrementality} không được hỗ trợ, collector giữ dữ liệu gốc và chuyển bản ghi lỗi vào hàng đợi DLQ. Hệ thống không tạo snapshot rỗng cho những trường hợp này, vì điều đó có thể khiến giao diện báo ``0 xe'' dù nguồn chỉ tạm thời gặp lỗi.
+
+\subsection{Vận chuyển qua Kafka}
+
+Kafka được triển khai với một broker ở chế độ KRaft, không dùng ZooKeeper, và có năm topic như Bảng~\ref{tab:topics}. Mỗi topic có một partition với hệ số sao chép bằng 1. Thời gian lưu thông điệp trên Kafka là 6 giờ; dữ liệu cần lưu bền vững được giữ trong kho dữ liệu gốc và Cassandra \cite{kafka}.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Các topic Kafka}
+\label{tab:topics}
+\begin{tabular}{p{5.82cm}p{5.82cm}p{3.49cm}}
+\toprule
+\textbf{Topic} & \textbf{Nội dung} & \textbf{Key} \\
+\midrule
+\ident{mbta.vehicle_positions.snapshots.v1} & Snapshot vị trí xe đã lọc theo phạm vi & \ident{run_id|vehicle_positions} \\
+\ident{mbta.trip_updates.snapshots.v1} & Snapshot dự báo chuyến & \ident{run_id|trip_updates} \\
+\ident{mbta.alerts.snapshots.v1} & Snapshot cảnh báo & \ident{run_id|alerts} \\
+\ident{mbta.control.v1} & Vòng đời run, clock tick, trạng thái collector/publisher & \ident{run_id|control} \\
+\ident{mbta.dlq.v1} & Lỗi kèm mã lý do, tham chiếu và trích đoạn $\le$ 2 KiB & \ident{run_id|feed_type} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Producer được cấu hình \ident{enable.idempotence=true} và \ident{acks=all}. Việc nén được tắt bằng \ident{compression.type=none} để giới hạn envelope 4 MiB phản ánh đúng kích thước truyền thực tế. Giới hạn \ident{max.message.bytes} của topic được đặt là 5 MiB để có phần dự phòng. Khóa Kafka bắt đầu bằng \ident{run_id}, giúp processor phân biệt thông điệp của các lần chạy dù cùng đọc một topic.
+
+\subsection{Xử lý luồng với Spark Structured Streaming}
+
+\subsubsection{Nguồn Kafka và checkpoint}
+
+Processor sử dụng một truy vấn Spark Structured Streaming \cite{structured_streaming} để đọc đồng thời bốn topic, gồm ba feed dữ liệu và một topic điều khiển. Dữ liệu được xử lý theo các lô nhỏ (micro-batch) bằng \ident{foreachBatch}, với chu kỳ kích hoạt 5 giây. Cấu hình nguồn trong \ident{processing/stream_job.py} như sau:
+
+\begin{minted}{python}
+def kafka_source_options(cfg, run_id: str) -> dict[str, str]:
+    t = cfg.kafka.topics
+    return {
+        "kafka.bootstrap.servers": cfg.kafka.bootstrap_servers,
+        "subscribe": ",".join([t.vehicle_positions, t.trip_updates, t.alerts, t.control]),
+        "startingOffsets": "earliest",
+        "failOnDataLoss": "true",
+        "kafka.max.partition.fetch.bytes": str(cfg.spark.max_partition_fetch_bytes),
+        "kafka.fetch.max.bytes": str(cfg.spark.fetch_max_bytes),
+        "groupIdPrefix": f"tp-{run_id[:8]}",
+        "includeHeaders": "false",
+    }
+\end{minted}
+
+Ba cấu hình sau quyết định cách hệ thống đọc và phục hồi dữ liệu:
+\begin{itemize}
+    \item \ident{startingOffsets=earliest} được dùng khi tạo checkpoint mới, kết hợp lọc theo khóa Kafka. Nhờ đó, các thông điệp phát trước khi truy vấn sẵn sàng vẫn được đọc. Cách này cũng khiến processor phải đọc qua dữ liệu của những run khác còn trong thời gian lưu.
+    \item \ident{failOnDataLoss=true} làm truy vấn dừng nếu offset trong checkpoint đã bị xóa do hết thời gian lưu. Hướng dẫn vận hành (runbook) mô tả cách phát lại dữ liệu vào một run mới khi gặp trường hợp này.
+    \item \ident{maxOffsetsPerTrigger} không được đặt vì giới hạn theo partition có thể tách một clock tick khỏi snapshot được phát ngay sau nó. Processor kiểm soát kích thước bằng cách báo lỗi khi một batch vượt \ident{MAX_SNAPSHOTS_PER_BATCH = 3000}.
+\end{itemize}
+Phiên Spark sử dụng \ident{spark.sql.session.timeZone=UTC} và \ident{-Duser.timezone=UTC} để tránh sai lệch khi chuyển giờ lịch GTFS. Với cấu hình \ident{spark.sql.ansi.enabled=false}, phép ép kiểu thất bại trả về \ident{NULL}; bước phân tích dữ liệu dùng giá trị này để gắn mã lý do phù hợp. Spark UI được tắt bằng \ident{spark.ui.enabled=false}.
+
+\subsubsection{Các bước trong một micro-batch}
+
+Trong mỗi micro-batch, \ident{BatchProcessor} xử lý dữ liệu theo các bước:
+\begin{enumerate}
+    \item \textbf{Tổng hợp sự kiện điều khiển:} cập nhật đồng hồ nghiệp vụ và trạng thái run (\ident{CREATED} $\rightarrow$ \ident{RUNNING} $\rightleftarrows$ \ident{PAUSED} $\rightarrow$ \ident{FINISHED}/\ident{FAILED}) bằng LWT.
+    \item \textbf{Phân tích và kiểm tra envelope:} kiểm tra phiên bản schema, header, \ident{incrementality} và \ident{gtfs_version} của run. Thông điệp hỏng được đưa vào DLQ kèm mã lý do như \texttt{INVALID\_JSON}, \texttt{STATIC\_VERSION\_MISMATCH}, \ldots
+    \item \textbf{Lập kế hoạch xử lý snapshot:} tạo hoặc đọc lại bản mô tả xử lý (manifest), xác định snapshot cha (parent), đồng thời nhận diện snapshot trùng hoặc đến muộn.
+    \item \textbf{Tạo generation:} tách các entity thành dòng dữ liệu, nối với bảng tham chiếu GTFS đúng phiên bản, tính ID và loại quan sát trùng theo \ident{observation_id}. Tiếp theo, processor xác định lịch, tính độ trễ, chọn sự kiện dùng cho KPI và tổng hợp theo tuyến. Processor cũng đối chiếu các điều kiện áp dụng cảnh báo (selector) để tạo dữ liệu cảnh báo, đồng thời sinh các dòng chất lượng.
+    \item \textbf{Ghi và công bố dữ liệu:} ghi các bảng phục vụ, lịch sử và chất lượng, đối chiếu số dòng rồi công bố generation theo giao thức ở Mục~\ref{sec:publish}.
+    \item \textbf{Lưu dữ liệu curated:} ghi lịch sử Parquet theo giao thức xác nhận hoàn tất (commit) từng batch ở Mục~\ref{sec:curated}.
+\end{enumerate}
+Các phép biến đổi dữ liệu được thực hiện bằng DataFrame API, tránh dùng vòng lặp Python trên tập dữ liệu lớn. Logic xử lý lấy thời gian từ đồng hồ nghiệp vụ đã cố định trong manifest, thay vì gọi \ident{current_timestamp()}. Nhờ đó, kết quả không thay đổi chỉ vì một batch được xử lý lại ở thời điểm khác.
+
+\subsubsection{Xác định lịch và phiên chuyến}
+
+Để tính độ trễ, hệ thống cần xác định đúng ngày dịch vụ và lần ghé trạm của từng dự báo:
+\begin{itemize}
+    \item Khi TripDescriptor có \ident{start_date}, hệ thống kiểm tra chuyến có hoạt động trong ngày đó hay không dựa trên \ident{calendar} và \ident{calendar_dates}. Nếu không hoạt động, kết quả là \ident{unresolved}.
+    \item Khi thiếu \ident{start_date}, hệ thống xét ba ngày ứng viên $L-1$, $L$, $L+1$, với $L$ là ngày địa phương của \ident{metrics_as_of}. Chỉ giữ các ngày có dịch vụ hoạt động và có đồng hồ nằm trong cửa sổ chuyến $\pm 12$ giờ. Nếu còn đúng một ứng viên, kết quả là \ident{resolved (inferred)}; nếu có nhiều ứng viên, kết quả là \ident{ambiguous}.
+    \item Trạm được đối chiếu bằng \ident{stop_sequence}. Trường \ident{stop_id} chỉ được dùng nếu trạm xuất hiện duy nhất trong chuyến. Với chuyến đi qua cùng trạm hai lần nhưng thiếu \ident{stop_sequence}, hệ thống ghi \texttt{UNRESOLVED\_STOP\_SEQUENCE}.
+\end{itemize}
+Khi xác định được ngày dịch vụ, mỗi phiên chuyến (trip instance) có khóa \ident{trip_id|YYYY-MM-DD}.
+
+\subsubsection{Tính KPI trên Spark}
+
+Hệ thống dùng hàm cửa sổ (window function) để chọn sự kiện đại diện (target) cho mỗi phiên chuyến. Ở mỗi lần ghé trạm, hệ thống chọn một sự kiện và ưu tiên arrival. Sau khi lọc các sự kiện tương lai, sự kiện có \ident{stop_sequence} nhỏ nhất được chọn làm target. Đoạn mã dưới đây được trích từ \ident{processing/kpi.py}:
+
+\begin{minted}{python}
+per_stu = Window.partitionBy("_inst", "stu_pos").orderBy(
+    F.when(F.col("event_type") == "arrival", 0).otherwise(1).asc()
+)
+tev = events.withColumn("_ev_rank", F.row_number().over(per_stu)).where(F.col("_ev_rank") == 1)
+future = tev.where(
+    (F.col("event_epoch") * F.lit(1_000_000) > F.lit(int(metrics_as_of_us)))
+    & ~F.col("stu_rel").isin(*NON_TARGET_STOP_RELATIONSHIPS)
+)
+first = Window.partitionBy("_inst").orderBy(F.col("sort_seq").asc_nulls_last(), F.col("stu_pos").asc())
+targets = (future.where(F.col("stop_resolved"))
+           .withColumn("_t_rank", F.row_number().over(first))
+           .where(F.col("_t_rank") == 1) ...)
+\end{minted}
+
+Lý do loại trừ được xác định bằng chuỗi \ident{F.when} theo thứ tự \ident{KPI_EXCLUSION_ORDER}, nên mỗi chuyến nhận tối đa một lý do. Kết quả được tổng hợp từ danh sách tuyến trong phạm vi xử lý bằng \ident{left join}. Vì vậy, tuyến chưa có chuyến vẫn xuất hiện với số đếm bằng 0 và tỷ lệ \ident{null}; mẫu số bằng 0 không bị hiển thị thành tỷ lệ 0\%.
+
+\subsection{Giao thức công bố generation}
+\label{sec:publish}
+
+\subsubsection{Vấn đề}
+
+Một snapshot có thể tạo ra hàng trăm đến hàng nghìn dòng trên nhiều bảng Cassandra. Tuy nhiên, Cassandra không hỗ trợ giao dịch trên nhiều partition \cite{cassandra}, còn logged batch nhiều partition cũng không bảo đảm tính cô lập khi đọc. Nếu API đọc dữ liệu trong lúc processor đang ghi, kết quả có thể chỉ chứa một phần số xe. Trường hợp processor dừng đột ngột còn khiến Spark phải xử lý lại micro-batch từ cùng offset.
+
+\subsubsection{Giải pháp: generation bất biến, manifest và pointer CAS}
+
+Để xử lý vấn đề này, TransitPulse kiểm soát \textbf{thời điểm dữ liệu được phép đọc}. Mỗi snapshot tạo một \textit{generation}, tức một bộ dòng phục vụ bất biến có khóa partition chứa \ident{snapshot_id}. API chỉ đọc generation đó sau khi con trỏ \ident{feed_current(run_id, feed_type)} được cập nhật bằng phép so sánh và thay thế (compare-and-set, CAS). Thao tác CAS sử dụng giao dịch nhẹ (lightweight transaction, LWT) của Cassandra, dựa trên giao thức Paxos \cite{paxos}. Trình tự được minh họa trong Hình~\ref{fig:publish}.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  actor/.style={draw, rounded corners=2pt, fill=blue!8, font=\scriptsize\bfseries, minimum width=2.6cm, minimum height=0.8cm, align=center},
+  msg/.style={-{Stealth[length=2mm]}, thick},
+  rd/.style={-{Stealth[length=2mm]}, thick, dashed},
+  lbl/.style={font=\scriptsize, above, midway}
+]
+\node[actor] (c) at (0,0)    {Collector /\\Publisher};
+\node[actor] (k) at (3.8,0)  {Kafka};
+\node[actor] (s) at (7.6,0)  {Spark\\foreachBatch};
+\node[actor] (d) at (11.4,0) {Cassandra};
+\node[actor] (a) at (15.2,0) {FastAPI};
+\foreach \x in {0,3.8,7.6,11.4,15.2} { \draw[gray, thin] (\x,-0.4) -- (\x,-9.6); }
+\fill[green!10] (11.25,-2.7) rectangle (11.55,-7.3);
+\draw[msg] (0,-1)    -- node[lbl] {(1) produce envelope} (3.8,-1);
+\draw[msg] (3.8,-2)  -- node[lbl] {(2) micro-batch} (7.6,-2);
+\draw[msg] (7.6,-3)  -- node[lbl] {(3) manifest BUILDING} (11.4,-3);
+\draw[msg] (7.6,-4)  -- node[lbl] {(4) ghi rows USING TTL} (11.4,-4);
+\draw[rd]  (15.2,-5) -- node[lbl] {(5) đọc pointer cũ} (11.4,-5);
+\node[draw, fill=yellow!20, font=\scriptsize, align=center] at (7.6,-6) {(6) số dòng ghi\\$=$ \texttt{expected\_counts}?};
+\draw[msg] (7.6,-7)  -- node[lbl] {(7) manifest READY} (11.4,-7);
+\draw[msg] (7.6,-8)  -- node[lbl] {(8) CAS \texttt{feed\_current}} (11.4,-8);
+\draw[rd]  (15.2,-9) -- node[lbl] {(9) đọc pointer mới + rows} (11.4,-9);
+\node[font=\scriptsize, align=left, anchor=west] at (11.7,-3.4) {generation\\chưa visible};
+\end{tikzpicture}}
+\caption{Trình tự công bố một generation. Trong các bước (3)--(7), API vẫn đọc generation cũ thông qua con trỏ hiện tại.}
+\label{fig:publish}
+\end{figure}
+
+Giao thức gồm các quy tắc sau:
+\begin{enumerate}
+    \item \textbf{Cố định tham số từ lần tạo đầu tiên.} Manifest ở trạng thái \ident{BUILDING} được tạo bằng \ident{INSERT ... IF NOT EXISTS}. Khi thử lại, nếu dòng đã tồn tại, processor dùng các giá trị đã lưu gồm \ident{parent_snapshot_id}, \ident{metrics_as_of}, \ident{expires_at}, \ident{history_expires_at} và \ident{built_as_late}. Kết quả logic vì vậy không phụ thuộc giờ thực của lần thử lại.
+    \item \textbf{Chọn snapshot cha.} Parent là snapshot mới hơn giữa hai ứng viên: snapshot mà pointer hiện tại trỏ tới và snapshot không trễ trước snapshot đang xử lý trong cùng feed, cùng micro-batch. Dữ liệu cha chỉ được kế thừa trong các trường hợp được kiểm soát, gồm vị trí khi có \texttt{OBSERVATION\_TIME\_REGRESSION} và cảnh báo khi snapshot chỉ hợp lệ một phần. Xe vắng mặt trong snapshot mới không được đưa từ parent sang danh sách fresh.
+    \item \textbf{Ghi dữ liệu theo cách idempotent.} Mỗi dòng có khóa xác định, nên ghi lại cùng một dòng không làm thay đổi kết quả logic. Hệ thống không dùng counter. TTL của mỗi lần ghi bằng số giây còn lại đến \ident{expires_at} đối với bảng phục vụ (1 giờ), hoặc \ident{history_expires_at} đối với lịch sử và chất lượng (3 ngày).
+    \item \textbf{Chuyển READY khi đủ số dòng.} Số dòng executor ghi vào từng bảng phải khớp \ident{expected_counts} trong manifest. Nếu không khớp, batch thất bại, manifest chưa được chuyển sang READY và pointer giữ nguyên.
+    \item \textbf{Cập nhật CAS theo thứ tự nguồn.} Pointer chỉ tiến khi \ident{source_order} mới lớn hơn giá trị hiện tại. Nếu đã trỏ đúng snapshot, thao tác được xem là thành công idempotent. Nếu pointer đã trỏ tới snapshot mới hơn, snapshot đang xử lý được xem là đến muộn (\textit{late}). Nó vẫn được lưu để kiểm tra và tra cứu lịch sử, kèm mã \texttt{LATE\_SNAPSHOT\_NOT\_PUBLISHED}, còn pointer không bị lùi.
+    \item \textbf{Ghi độ trễ công bố một lần.} LWT \ident{IF publish_outcome = null} bảo đảm visibility latency chỉ được ghi lần đầu. Các lần gửi lặp có chỉ số riêng và không tạo độ trễ âm.
+    \item \textbf{Dừng batch khi không ghi được hạ tầng bắt buộc.} Nếu Cassandra không ghi được, ngoại lệ được truyền ra ngoài để micro-batch thất bại và checkpoint chưa được commit. Khi khởi động lại với cùng checkpoint, Spark xử lý lại đúng \ident{batch_id} và các offset đó.
+\end{enumerate}
+
+Đoạn mã dưới đây mô tả vòng CAS trong \ident{processing/batch.py}, đã rút gọn phần ghi log và chỉ số:
+
+\begin{minted}{python}
+for attempt in range(1, attempts + 1):
+    ptr = read_pointer(ctx.session, ctx.run_id, feed, serial=True)
+    if ptr is not None and ptr["snapshot_id"] == sid:
+        ...  # pointer already at this generation: idempotent success
+        return RESULT_REUSED, applied
+    if ptr is not None and str(ptr["source_order"]) > str(man["source_order"]):
+        self._audit_quality(man, "LATE_SNAPSHOT_NOT_PUBLISHED", details={...})
+        return RESULT_LATE, set_outcome_once(ctx.session, key, OUTCOME_LATE)
+    now = ms_floor(utcnow())
+    if remaining_s(man["expires_at"], now) < min_ttl:
+        return RESULT_EXPIRED, ...
+    row = pointer_row(man, now)
+    if ptr is None:
+        applied_ptr, _existing = bootstrap_pointer(ctx.session, row)   # INSERT ... IF NOT EXISTS
+    else:
+        applied_ptr = cas_pointer(ctx.session, row, ptr["snapshot_id"])  # UPDATE ... IF snapshot_id = ?
+    if applied_ptr:
+        lat = latency_ms(now, man.get("published_at"))
+        applied = set_outcome_once(ctx.session, key, OUTCOME_PUBLISHED, now, lat)
+        return RESULT_PUBLISHED, applied
+raise PointerContention(f"pointer CAS for {feed}/{sid} failed {attempts} times")
+\end{minted}
+
+Câu lệnh CAS tương ứng trong \ident{storage/pointer.py}:
+\begin{minted}{sql}
+UPDATE feed_current SET snapshot_id = ?, generation_id = ?, source_order = ?, ...
+WHERE run_id = ? AND feed_type = ? IF snapshot_id = ?
+\end{minted}
+
+Với giao thức này, hệ thống cung cấp \textbf{giao nhận at-least-once kết hợp ghi và công bố idempotent}: một thông điệp có thể được xử lý nhiều lần nhưng kết quả logic không bị nhân đôi. Thiết kế chưa cung cấp exactly-once xuyên Kafka, Parquet và Cassandra \cite{ddia}. Bảng~\ref{tab:recovery} trình bày hành vi mong đợi trong các tình huống lỗi điển hình.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Các kịch bản phục hồi và hành vi mong đợi}
+\label{tab:recovery}
+\begin{tabular}{p{4.58cm}p{8.96cm}p{1.59cm}}
+\toprule
+\textbf{Tình huống} & \textbf{Hành vi} & \textbf{Kiểm thử} \\
+\midrule
+Cùng snapshot được gửi lại & Dùng lại manifest READY; số đếm và lịch sử không tăng & IT02 \\
+Snapshot cũ đến sau snapshot mới & Được đánh dấu READY nhưng không trở thành dữ liệu hiện tại; pointer và tọa độ không lùi & IT03 \\
+Dừng đột ngột sau khi ghi một phần, trước READY & API tiếp tục đọc generation cũ; lần thử lại hoàn tất với cùng ID và parent & IT10 \\
+Dừng đột ngột sau CAS, trước commit checkpoint & Lần thử lại nhận biết pointer đã đúng; giữ nguyên \texttt{view\_published\_at}, \texttt{expires\_at} & IT11 \\
+Cassandra không ghi được & Batch thất bại, offset chưa commit; dữ liệu tồn được xử lý sau khi phục hồi & IT12 \\
+Generation hết TTL & API trả 503 \texttt{generation\_expired}; snapshot rỗng hợp lệ trả 200 cùng \texttt{[]} & IT15 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Processor hỗ trợ chủ động tạo lỗi (fault injection) để kiểm thử khả năng phục hồi. Mỗi kịch bản được kích hoạt bằng một tệp dùng một lần tại \ident{faults/<run_id>/<point>.json}. Bốn điểm tạo lỗi gồm \ident{after_partial_write}, \ident{after_ready_before_cas}, \ident{after_cas_before_commit} và \ident{executor_write_error}. Khi gặp điểm đã chọn, processor thoát với mã 86, giúp phân biệt với mã 137 khi tiến trình bị dừng do thiếu bộ nhớ (OOM). Cơ chế này chỉ được bật khi chạy với cờ \ident{--enable-fault-injection}.
+
+\subsection{Mô hình dữ liệu Cassandra}
+
+\subsubsection{Nguyên tắc thiết kế}
+
+Schema trong \ident{storage/migrations/0001_initial.cql} gồm 17 bảng. Mô hình được thiết kế từ nhu cầu truy vấn (\textbf{query-first}) và sử dụng phi chuẩn hóa, nghĩa là mỗi bảng được tổ chức để phục vụ trực tiếp một mẫu truy vấn. Các nguyên tắc chính gồm:
+\begin{itemize}
+    \item truy vấn đọc theo partition và có \ident{LIMIT}, tránh quét toàn bảng và không dùng \ident{ALLOW FILTERING};
+    \item không dùng counter vì việc thử lại có thể làm tăng số đếm, đồng thời không dùng logged batch trên nhiều partition;
+    \item dữ liệu điều khiển trong \ident{feed_current}, \ident{snapshot_manifest} và đồng hồ của \ident{run_metadata} chỉ được ghi bằng LWT;
+    \item bảng phục vụ dùng \ident{USING TTL} dựa trên \ident{expires_at}; bảng lịch sử và chất lượng dùng \ident{history_expires_at}.
+\end{itemize}
+
+\subsubsection{Các bảng chính}
+
+Bảng~\ref{tab:cassandra} liệt kê các bảng chính cùng khóa và mục đích sử dụng. Trong bảng, ký hiệu $((a,b),c)$ biểu diễn khóa phân vùng (partition key) $(a,b)$ và cột sắp xếp trong phân vùng (clustering column) $c$.
+
+\begin{longtable}{p{4.16cm}p{5.11cm}p{3.97cm}p{1.32cm}}
+\caption{Bảng Cassandra, khóa, truy vấn sử dụng và TTL} \label{tab:cassandra} \\
+\toprule
+\textbf{Bảng} & \textbf{Khóa} & \textbf{Phục vụ} & \textbf{TTL} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Bảng} & \textbf{Khóa} & \textbf{Phục vụ} & \textbf{TTL} \\
+\midrule
+\endhead
+{\tablefont\ident{run_metadata}} & {\tablefont((run\_id))} & {\tablefont phạm vi, đồng hồ, chính sách của run} & {\tablefont không} \\
+{\tablefont\ident{feed_current}} & {\tablefont((run\_id, feed\_type))} & {\tablefont pointer; đọc một lần mỗi feed trong một yêu cầu} & {\tablefont không} \\
+{\tablefont\ident{snapshot_manifest}} & {\tablefont((run\_id, feed\_type), snapshot\_id)} & {\tablefont READY, expected\_counts, nguồn gốc dữ liệu} & {\tablefont không} \\
+{\tablefont\ident{routes_by_version}} & {\tablefont((gtfs\_version), route\_id)} & {\tablefont \texttt{/routes}} & {\tablefont không} \\
+{\tablefont\ident{stop_times_by_trip}} & {\tablefont((gtfs\_version, trip\_id), stop\_sequence)} & {\tablefont \texttt{/trips/\{id\}/stops}} & {\tablefont không} \\
+{\tablefont\ident{geometries_by_route}} & {\tablefont((gtfs\_version, route\_id), shape\_id)} & {\tablefont \texttt{/routes/\{id\}/geometry}} & {\tablefont không} \\
+{\tablefont\ident{vehicles_by_route_snapshot}} & {\tablefont((run\_id, snapshot\_id, route\_id), vehicle\_id)} & {\tablefont \texttt{/vehicles}, chỉ số} & {\tablefont 1 h} \\
+{\tablefont\ident{predictions_by_stop_snapshot}} & {\tablefont((run\_id, snapshot\_id, stop\_id), predicted\_at, prediction\_id)} & {\tablefont \texttt{/stops/\{id\}/predictions}} & {\tablefont 1 h} \\
+{\tablefont\ident{route_metrics_by_snapshot}} & {\tablefont((run\_id, feed\_type, snapshot\_id), route\_id)} & {\tablefont \texttt{/routes/\{id\}/metrics}} & {\tablefont 1 h} \\
+{\tablefont\ident{alerts_by_route_snapshot}} & {\tablefont((run\_id, snapshot\_id, route\_id), alert\_id)} & {\tablefont \texttt{/alerts}} & {\tablefont 1 h} \\
+{\tablefont\ident{vehicle_observations_by_day}} & {\tablefont((run\_id, vehicle\_id, utc\_date), event\_time DESC, observation\_id)} & {\tablefont \texttt{/vehicles/\{id\}/history}} & {\tablefont 3 ngày} \\
+{\tablefont\ident{quality_by_snapshot}} & {\tablefont((run\_id, feed\_type, snapshot\_id), reason\_code)} & {\tablefont \texttt{/quality}} & {\tablefont 3 ngày} \\
+{\tablefont\ident{pipeline_status}} & {\tablefont((run\_id), component)} & {\tablefont \texttt{/pipeline/status}} & {\tablefont không} \\
+\bottomrule
+\end{longtable}
+
+Việc đưa \ident{snapshot_id} vào khóa phân vùng giúp tách riêng dữ liệu của từng generation. Generation mới vì vậy không ghi đè lên dữ liệu đang được đọc. Các generation cũ được dọn theo TTL, giảm nhu cầu xóa chủ động bằng \ident{DELETE} và các tombstone do thao tác này tạo ra. Dưới đây là định nghĩa rút gọn của bảng vị trí xe:
+
+\begin{minted}{sql}
+CREATE TABLE IF NOT EXISTS transitpulse.vehicles_by_route_snapshot (
+  run_id text, snapshot_id text, route_id text, vehicle_id text,
+  observation_id text, record_kind text,
+  observation_time timestamp, event_time timestamp, event_time_origin text,
+  freshness_known boolean, position_valid boolean, invalid_reason text,
+  latitude double, longitude double, bearing double, speed_mps double,
+  trip_id text, direction_id int, start_date text, start_time text,
+  is_inherited boolean, inherited_from_snapshot_id text,
+  quality_flags set<text>,
+  PRIMARY KEY ((run_id, snapshot_id, route_id), vehicle_id)
+);
+\end{minted}
+
+Bảng lịch sử \ident{vehicle_observations_by_day} được phân vùng theo bộ (run, xe, ngày UTC) để giới hạn kích thước từng partition. Dữ liệu bên trong được sắp giảm dần theo \ident{event_time}, giúp truy vấn ``một giờ gần nhất'' chỉ cần đọc phần đầu phân vùng.
+
+\subsubsection{Nhất quán khi đọc}
+
+Với mỗi yêu cầu, API đọc pointer \textbf{một lần} cho từng feed và dùng cùng \ident{snapshot_id} cho các truy vấn còn lại. Khi generation còn hạn nhưng số dòng đọc được không khớp \texttt{expected\_counts["<bảng>/<khóa>"]}, API trả 503 với mã \ident{generation_inconsistent}. Quy tắc này áp dụng cả khi thiếu dòng lẫn khi thừa dòng từ một lần tạo generation bị hủy.
+
+Nếu generation đã hết hạn, API trả 503 với mã \ident{generation_expired}. Chỉ snapshot rỗng hợp lệ mới được trả 200 cùng danh sách rỗng, giúp người dùng phân biệt trạng thái ``0 xe'' với lỗi dữ liệu. Cấu hình demo dùng \ident{LOCAL_ONE} cho đọc và ghi thông thường, còn LWT dùng \ident{SERIAL}, phù hợp với triển khai một node RF1.
+
+\subsection{Lưu trữ lịch sử và báo cáo batch}
+\label{sec:curated}
+
+Bên cạnh Cassandra, mỗi micro-batch lưu dữ liệu lịch sử đã xử lý ở dạng Parquet theo một giao thức commit riêng. Kết quả của từng snapshot, gọi là \textit{unit}, được ghi vào thư mục \ident{_staging/batch_id=N/} rồi đánh dấu hoàn tất. Processor tiếp tục dùng \ident{os.rename} để chuyển cả thư mục sang \ident{batch_id=N/}; đây là thao tác nguyên tử khi thực hiện trên cùng hệ thống tệp. Cuối cùng, tệp \ident{_COMMITTED} được tạo để liệt kê chính xác các tệp đầu ra.
+
+Thành phần đọc chỉ sử dụng batch có \ident{_COMMITTED} và đọc đúng những tệp được liệt kê trong đó. Cách này giúp dữ liệu ghi dở chưa được đưa vào báo cáo.
+
+Tác vụ \ident{processing/report_job.py} (FR09) dùng Spark batch để phân tích các batch đã commit, gồm:
+\begin{itemize}
+    \item hoạt động xe theo tuyến trong các cửa sổ thời gian sự kiện dài 1 phút và 5 phút (\ident{F.window}), bao gồm số xe phân biệt và số quan sát sau khi loại trùng theo \ident{observation_id}. Tốc độ được suy ra từ hai quan sát liên tiếp bằng công thức haversine, đồng thời loại các bước nhảy GPS có tốc độ trên 40 m/s;
+    \item tỷ lệ chuyến trễ dự kiến theo tuyến trong cửa sổ 5 phút. Dữ liệu được loại trùng theo (\ident{snapshot_id}, \ident{prediction_id}) và lấy generation mới nhất của từng phiên chuyến;
+    \item các phân vị p50/p95 của độ trễ công bố theo feed, kèm số mẫu dùng để tính.
+\end{itemize}
+Định danh \ident{report_id} được tạo từ hàm băm của danh sách batch đầu vào. Vì vậy, chạy lại với cùng dữ liệu đầu vào không tạo thêm báo cáo.
+
+\subsection{Tầng phục vụ FastAPI}
+
+FastAPI phục vụ dữ liệu theo chế độ chỉ đọc. Mỗi phản hồi có dạng \texttt{\{data, meta, warnings\}}. Với từng feed, trường \ident{meta} cung cấp \ident{snapshot_id}, \ident{feed_timestamp}, \ident{metrics_as_of}, tuổi dữ liệu nguồn, ngưỡng xác định dữ liệu cũ (stale) và thời điểm hết hạn. Phản hồi lỗi gồm mã lỗi, thông điệp và gợi ý xử lý. Các endpoint chính được liệt kê trong Bảng~\ref{tab:api}.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Các endpoint chính và trình tự đọc Cassandra}
+\label{tab:api}
+\begin{tabular}{p{5.40cm}p{10.20cm}}
+\toprule
+\textbf{Endpoint} & \textbf{Trình tự đọc} \\
+\midrule
+\texttt{GET /health/live}, \texttt{/health/ready} & Không đọc; \texttt{system.local} + \texttt{schema\_migrations} \\
+\texttt{GET /runs}, \texttt{/runs/\{run\_id\}} & \texttt{runs\_by\_project} (LIMIT) $\rightarrow$ \texttt{run\_metadata}, 3 pointer, \texttt{pipeline\_status} \\
+\texttt{GET /routes}, \texttt{/routes/\{id\}/stops|geometry} & \texttt{run\_metadata} $\rightarrow$ bảng tĩnh theo \texttt{gtfs\_version} của run \\
+\texttt{GET /vehicles} & \texttt{feed\_current(VP)} $\rightarrow$ manifest $\rightarrow$ \texttt{vehicles\_by\_route\_snapshot} theo từng tuyến ($\le$ 2000 dòng) \\
+\texttt{GET /vehicles/\{id\}/history} & \texttt{vehicle\_observations\_by\_day} theo từng phân vùng ngày UTC ($\le$ 24 h, phân trang) \\
+\texttt{GET /stops/\{id\}/predictions} & \texttt{feed\_current(TU)} $\rightarrow$ manifest $\rightarrow$ \texttt{predictions\_by\_stop\_snapshot} (\texttt{predicted\_at} $\ge$ clock $-$ 60 s) \\
+\texttt{GET /routes/\{id\}/metrics} & \texttt{feed\_current(VP, TU)} $\rightarrow$ \texttt{route\_metrics\_by\_snapshot} + xe (tính lại độ mới) \\
+\texttt{GET /alerts} & \texttt{feed\_current(AL)} $\rightarrow$ \texttt{alerts\_by\_route\_snapshot} (đọc từng tuyến, loại trùng \texttt{alert\_id}) \\
+\texttt{GET /quality}, \texttt{/pipeline/status} & 3 pointer $\rightarrow$ \texttt{quality\_by\_snapshot}, \texttt{pipeline\_status} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tầng phục vụ được tổ chức theo bốn nguyên tắc:
+\begin{itemize}
+    \item \textbf{Tính trạng thái tại thời điểm yêu cầu.} Độ mới của vị trí xe, trạng thái hiệu lực của cảnh báo (ALWAYS, ACTIVE, UPCOMING, EXPIRED) và mức độ cũ của feed đều được tính theo đồng hồ nghiệp vụ tại thời điểm API nhận yêu cầu.
+    \item \textbf{Chỉ lưu đệm dữ liệu bất biến.} API lưu đệm generation READY và dữ liệu tĩnh, với 256 mục và TTL tối đa 30 s. Pointer, đồng hồ và độ mới của dữ liệu được đọc hoặc tính lại.
+    \item \textbf{Giới hạn tài nguyên sử dụng.} API chạy một worker uvicorn, giới hạn thời gian mỗi câu lệnh là 2 s và mỗi yêu cầu là 10 s. Trang kết quả mặc định có 100 dòng, tối đa 500 dòng; token phân trang được ký HMAC.
+    \item \textbf{Phân biệt nguồn cảnh báo.} Cảnh báo dịch vụ MBTA và cảnh báo chất lượng pipeline thuộc hai nhóm riêng. Nhờ đó, lỗi của pipeline không bị hiểu nhầm là thông báo từ MBTA.
+\end{itemize}
+
+\subsection{Giao diện người dùng}
+
+Hệ thống cung cấp ba giao diện, cùng lấy dữ liệu qua HTTP từ API:
+\begin{itemize}
+    \item \textbf{Console React} sử dụng Vite, Tailwind và MapLibre, gồm sáu màn hình: tổng quan, bản đồ, trạm, cảnh báo, chất lượng và lịch sử xe. Bản đồ sử dụng nền CARTO trên dữ liệu OpenStreetMap, nên trình duyệt cần có kết nối mạng.
+    \item \textbf{Dashboard Streamlit + PyDeck} phục vụ việc theo dõi khi chạy trên máy cá nhân.
+    \item \textbf{Giao diện notebook} sử dụng ipywidgets, gồm năm tab trên Colab. Tab bản đồ tự cập nhật vị trí xe mỗi 5 giây.
+\end{itemize}
+Các phép tính nghiệp vụ được thực hiện ở phía xử lý và API. Giao diện không tự thay dữ liệu thiếu bằng 0; khi API trả 503, giao diện hiển thị trạng thái ``unavailable'' để thể hiện dữ liệu chưa sẵn sàng.
+
+\subsection{Replay và dữ liệu synthetic}
+
+Một bản ghi để phát lại (recording) gồm nội dung gốc, dòng thời gian, manifest có checksum và \ident{gtfs_version} được dùng khi thu thập. Trước khi phát lại, hệ thống kiểm tra checksum và phiên bản GTFS để dữ liệu lịch sử được nối đúng với lịch tương ứng. Recording cũ không được ghép với tệp ZIP mới tải.
+
+Publisher phát dữ liệu theo dòng thời gian ở tốc độ 1x, 10x hoặc 50x. Việc điều khiển được thực hiện qua \ident{publisher_control.json}, còn trạng thái xác nhận được ghi vào \ident{publisher_state.json}. Các thao tác hỗ trợ gồm tạm dừng (pause), tiếp tục (resume) và phát từng bước (step).
+
+Dữ liệu synthetic được sinh tất định từ seed, đóng gói thành recording và phát bằng cùng publisher. Ba loại dữ liệu gồm \textit{golden} (bộ dữ liệu kiểm thử viết tay), \textit{demo} và \textit{stress}. Loại stress nhân bản các chuyến tĩnh của 5 tuyến để tạo tải 100--1000 bản ghi chuẩn hóa mỗi giây.
+
+\subsection{Vận hành, triển khai và quan sát}
+
+\subsubsection{Môi trường chạy trực tiếp}
+
+Để chạy trên Google Colab, nơi không có Docker, systemd hay sudo, dự án xây dựng một môi trường điều phối bằng Python cho các dịch vụ chạy trực tiếp:
+\begin{itemize}
+    \item \textbf{Bootstrap} (\ident{scripts/bootstrap_colab.sh}) tải JDK, Kafka, Cassandra, Node.js, cloudflared và connector Spark theo \ident{deploy/runtime-manifest.json}. Mỗi gói được đối chiếu với tệp checksum chính thức (SHA-256 hoặc SHA-512) trước khi giải nén an toàn. Kafka và Cassandra có địa chỉ tải dự phòng tại \ident{archive.apache.org}.
+    \item \textbf{Doctor} kiểm tra điều kiện trước khi chạy, gồm kiến trúc và số CPU, RAM khả dụng, dung lượng đĩa, inode, cổng dịch vụ, phiên bản Java/Python và mã băm cấu hình.
+    \item \textbf{Supervisor} khởi động và dừng Kafka, Cassandra, processor, collector/publisher, API cùng giao diện. Thành phần này ghi nhận quyền sở hữu từng tiến trình để dừng đúng tiến trình cần quản lý, không dùng \ident{pkill}/\ident{killall}. Việc dừng dịch vụ không xóa dữ liệu.
+    \item Ba cấu hình triển khai dùng chung mã nguồn, schema và API: \ident{colab-native}, \ident{local-native} và \ident{local-docker} (Docker Compose). Trong đó, \ident{colab-native} là cấu hình đã được chạy xuyên suốt từ đầu vào đến đầu ra.
+\end{itemize}
+
+Cấu hình \ident{colab-native} dành 1 GiB heap cho Kafka, 4 GiB heap và 2 GiB direct memory cho Cassandra, cùng 16 GiB cho Spark driver ở chế độ \ident{local[2]}. Tổng ngân sách khoảng 23 GiB trên máy ảo có RAM cao. Trong demo và golden smoke trên Colab, tính năng whole-stage codegen của Spark được tắt vì việc biên dịch kế hoạch xử lý dự báo mất nhiều phút ở mỗi micro-batch, vượt thời gian dành cho golden smoke. Khi đo thông lượng, benchmark bật lại codegen thông qua biến môi trường \ident{TP_SPARK_WHOLE_STAGE}.
+
+\subsubsection{Truy cập và an toàn}
+
+Các cổng dịch vụ chỉ lắng nghe tại \ident{127.0.0.1}, còn CORS giới hạn nguồn truy cập bằng danh sách cho phép. Trên Colab, notebook có thể đưa console React ra Internet qua Cloudflare quick tunnel, với URL ngẫu nhiên dạng \ident{*.trycloudflare.com}. Tệp thực thi \ident{cloudflared} được kiểm tra theo mã SHA-256 đã cố định.
+
+Đường dẫn tunnel là \textbf{công khai và không có xác thực}. Console chỉ phục vụ dữ liệu công khai MBTA hoặc dữ liệu synthetic; Kafka và Cassandra vẫn không được mở ra ngoài. Có thể tắt tunnel bằng \ident{ENABLE_CLOUDFLARE_TUNNEL = False}. Phiên bản Spark 3.5.7 có lỗ hổng CVE-2026-32773 liên quan đến XSS ở Spark History Server. Trong cấu hình dự án, Spark UI được tắt và History Server không được chạy.
+
+\subsubsection{Quan sát}
+
+Mỗi thành phần ghi log JSON có cấu trúc, gồm giai đoạn xử lý, trạng thái, batch, feed, snapshot và thời lượng. Các chỉ số Prometheus được xuất dưới dạng textfile, bao gồm số generation theo kết quả công bố (\ident{published}, \ident{reused}, \ident{late}, \ident{expired}), phân bố độ trễ công bố theo feed và lượng dữ liệu Kafka chưa xử lý theo topic, partition.
+
+Thành phần \ident{StreamingQueryListener} ghi tiến độ vào \ident{query_progress.jsonl} và cập nhật heartbeat trong \ident{pipeline_status}. Để kiểm tra nguồn gốc dữ liệu, lệnh \ident{demo.py lineage} lần ngược một snapshot qua pointer, manifest, dữ liệu gốc, Kafka, batch và API. Trong quá trình này, lệnh đối chiếu SHA-256 của dữ liệu gốc, đọc lại thông điệp Kafka tại offset đã ghi và báo kết quả kiểm tra tính nhất quán.

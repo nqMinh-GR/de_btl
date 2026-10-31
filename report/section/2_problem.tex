@@ -1,0 +1,202 @@
+\section{Bài toán và yêu cầu}
+\label{sec:problem}
+
+\subsection{Nguồn dữ liệu}
+
+Dự án sử dụng bốn nguồn dữ liệu công khai của MBTA, được liệt kê trong Bảng~\ref{tab:sources}. Các nguồn này cung cấp cả lịch trình và thông tin vận hành theo thời gian thực. Hệ thống không phụ thuộc vào MBTA V3 API hay nguồn dữ liệu khác; khi xảy ra lỗi mạng, dữ liệu MBTA cũng không được thay bằng dữ liệu từ nguồn khác.
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Bốn nguồn dữ liệu MBTA được sử dụng}
+\label{tab:sources}
+\begin{tabular}{p{2.91cm}p{6.21cm}p{6.01cm}}
+\toprule
+\textbf{Nguồn} & \textbf{URL} & \textbf{Vai trò} \\
+\midrule
+GTFS Static & \url{https://cdn.mbta.com/MBTA_GTFS.zip} & Tuyến, trạm, chuyến, lịch trình, hình học tuyến và múi giờ \\
+Vehicle Positions & \url{https://cdn.mbta.com/realtime/VehiclePositions.json} & Vị trí xe, thông tin nhận diện chuyến và thời điểm quan sát \\
+Trip Updates & \url{https://cdn.mbta.com/realtime/TripUpdates.json} & Giờ dự báo đến/rời trạm và trường \ident{uncertainty} \\
+Service Alerts & \url{https://cdn.mbta.com/realtime/Alerts.json} & Cảnh báo dịch vụ, đối tượng áp dụng và thời hạn hiệu lực \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+GTFS Static lưu thông tin lịch trình trong các bảng \ident{routes}, \ident{trips}, \ident{stop_times}, \ident{stops}, \ident{calendar}, \ident{calendar_dates} và \ident{shapes}. Trong khi đó, mỗi luồng dữ liệu GTFS Realtime (feed) gồm phần \ident{header} và danh sách \ident{entity}. Header chứa phiên bản, \ident{incrementality} và \ident{timestamp} của feed; nội dung entity phụ thuộc vào loại feed.
+
+Cụ thể, Vehicle Positions cung cấp mã xe, tọa độ, \ident{timestamp} của lần đo và thông tin nhận diện chuyến. Trip Updates chứa danh sách \ident{stop_time_update}, trong đó mỗi phần tử có giờ dự báo đến trạm (arrival), rời trạm (departure), hoặc cả hai, cùng trường \ident{uncertainty}. Service Alerts dùng \ident{informed_entity} để xác định đối tượng áp dụng theo tuyến, trạm, chuyến, đơn vị vận hành hoặc loại tuyến; \ident{active_period} xác định thời gian cảnh báo có hiệu lực.
+
+Trong dữ liệu quan sát ngày 06/10/2026, feed Trip Updates của MBTA \textbf{không có trường \ident{delay}}. Vì vậy, hệ thống tính độ trễ dự kiến bằng cách lấy giờ dự báo trừ giờ lịch GTFS. Hai mốc được so sánh phải thuộc \textbf{cùng loại sự kiện}: giờ đến so với giờ đến, giờ rời so với giờ rời.
+
+\subsection{Thách thức kỹ thuật}
+
+\paragraph{Dữ liệu nguồn có thể thiếu hoặc không hợp lệ.} Một entity có thể thiếu \ident{vehicle.id}, có tọa độ ngoài miền hợp lệ hoặc có \ident{timestamp} ở tương lai. Thời gian cũng có thể được ghi theo mili giây thay vì giây. Ngoài ra, một chuyến có thể đi qua cùng một trạm hai lần, nên chỉ dùng \ident{stop_id} là chưa đủ để ghép dự báo với lịch trình.
+
+\paragraph{Dữ liệu có thể được xử lý nhiều lần.} Với cơ chế giao nhận at-least-once, Kafka và checkpoint của Spark hỗ trợ tránh mất thông điệp, nhưng một thông điệp vẫn có thể được xử lý nhiều lần. Chẳng hạn, bộ thu thập (collector) có thể gửi lại dữ liệu sau khi khởi động lại, hoặc Spark có thể xử lý lại một lô nhỏ (micro-batch) sau sự cố. Một bản chụp dữ liệu tại thời điểm thu thập (snapshot) cũ cũng có thể đến sau snapshot mới. Trong các trường hợp này, kết quả logic của hệ thống cần được giữ nhất quán.
+
+\paragraph{Không có giao dịch chung giữa các thành phần.} Trong một lần xử lý, hệ thống ghi dữ liệu vào Kafka qua DLQ, vào hệ thống tệp dưới dạng curated Parquet và vào nhiều bảng Cassandra. Ba nơi lưu trữ này không có cơ chế xác nhận ghi nguyên tử chung. Vì vậy, hệ thống cần kiểm soát thời điểm đưa một phiên bản dữ liệu (generation) vào phục vụ, tránh để API đọc dữ liệu khi quá trình ghi chưa hoàn tất.
+
+\paragraph{Phân biệt các mốc thời gian.} Thời điểm đo vị trí xe, tạo feed, thu thập, gửi lên Kafka và hiển thị dữ liệu là các mốc khác nhau. Lịch GTFS còn cho phép giờ vượt 24:00 để biểu diễn các chuyến qua nửa đêm. Vào ngày đổi giờ mùa hè, cách cộng trực tiếp giờ lịch vào mốc nửa đêm có thể cho kết quả lệch một giờ. Khi phát lại dữ liệu (replay), thời điểm hiện tại được xác định theo đồng hồ của bản ghi lịch sử, thay vì giờ máy.
+
+\paragraph{Thiết kế dữ liệu theo truy vấn của Cassandra.} Cassandra không hỗ trợ phép nối bảng. Truy vấn ngoài khóa phân vùng có thể cần \ident{ALLOW FILTERING} và phải quét toàn bảng. Do đó, mô hình dữ liệu được xây dựng từ nhu cầu truy vấn (query-first), để mỗi endpoint đọc theo phân vùng và giới hạn số bản ghi bằng \ident{LIMIT}.
+
+\subsection{Yêu cầu chức năng}
+
+Bảng~\ref{tab:fr} trình bày 12 yêu cầu chức năng cùng các thành phần đảm nhận từng yêu cầu.
+
+\begingroup\tablefont
+\begin{longtable}{p{1.16cm}p{8.73cm}p{5.24cm}}
+\caption{Yêu cầu chức năng và thành phần thực hiện} \label{tab:fr} \\
+\toprule
+\textbf{Mã} & \textbf{Yêu cầu} & \textbf{Thành phần} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Mã} & \textbf{Yêu cầu} & \textbf{Thành phần} \\
+\midrule
+\endhead
+FR01 & Nhập tệp GTFS ZIP; dùng SHA-256 của tệp làm phiên bản; lưu bảng chiều Parquet và metadata bất biến & \ident{static/} \\
+FR02 & Thu thập độc lập 3 feed; lưu dữ liệu gốc và metadata trước khi gửi; không tạo snapshot rỗng khi hết thời gian chờ & \ident{ingestion/collector.py}, \ident{archive.py} \\
+FR03 & Gửi snapshot qua Kafka với schema, checksum và ID ổn định; lưu bền vững hàng đợi gửi (outbox) & \ident{ingestion/outbox.py}, \ident{kafka_producer.py} \\
+FR04 & Dùng Spark để phân tích, kiểm tra, tách phần tử, nối với GTFS và loại trùng; gắn mã chất lượng và tham chiếu dữ liệu gốc & \ident{processing/} \\
+FR05 & Lấy vị trí xe từ generation hiện tại; phân lớp fresh/stale/unknown/invalid; không cộng dồn số xe qua nhiều snapshot & \ident{processing/vehicles.py}, \ident{api/freshness.py} \\
+FR06 & Cung cấp dự báo đến/rời trạm, uncertainty của MBTA và độ trễ dự kiến khi xác định được lịch & \ident{processing/predictions.py}, \ident{schedule.py} \\
+FR07 & Tính KPI tuyến với tối đa một trạm mục tiêu cho mỗi chuyến trong ngày dịch vụ; công bố tử số, mẫu số, lý do loại trừ và thời điểm tính & \ident{processing/kpi.py} \\
+FR08 & Xác định đối tượng và thời hạn của cảnh báo; phân biệt cảnh báo MBTA với cảnh báo chất lượng pipeline & \ident{processing/alerts.py}, API \ident{/alerts} \\
+FR09 & Phân trang lịch sử xe; lưu dữ liệu đã xử lý dưới dạng curated Parquet; lập báo cáo lịch sử bằng Spark batch & \ident{processing/report_job.py} \\
+FR10 & Giữ generation bất biến; API chỉ đọc READY; dữ liệu trùng, đến muộn hoặc xử lý lại không làm tăng KPI hay lùi con trỏ & \ident{processing/batch.py}, \ident{storage/pointer.py} \\
+FR11 & Phát lại với đúng phiên bản dữ liệu tĩnh ở tốc độ 1x/10x/50x, có tạm dừng/tiếp tục; tách đồng hồ nguồn khỏi đồng hồ máy & \ident{replay/} \\
+FR12 & Cung cấp API, dashboard, trang chất lượng; kiểm thử golden, kiểm thử lỗi và benchmark có bằng chứng & \ident{api/}, \ident{app/}, \ident{tests/}, \ident{benchmarks/} \\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\subsection{Yêu cầu phi chức năng}
+
+\begin{table}[H]
+\centering
+\tablefont
+\caption{Yêu cầu phi chức năng}
+\label{tab:nfr}
+\begin{tabular}{p{1.37cm}p{3.34cm}p{10.42cm}}
+\toprule
+\textbf{Mã} & \textbf{Thuộc tính} & \textbf{Cách đáp ứng} \\
+\midrule
+NFR01 & Tính đúng & Bộ dữ liệu chuẩn (golden fixture) viết tay và bộ tính kết quả đối chiếu (oracle) độc lập \ident{tests/oracle/} \\
+NFR02 & Phục hồi & Checkpoint của Spark, ghi đầu ra lặp lại không làm đổi kết quả (idempotent), manifest cố định và outbox bền vững \\
+NFR03 & Độ trễ & Mục tiêu p95 của độ trễ đưa dữ liệu vào phục vụ (visibility latency) $<$ 10 s; cần kiểm chứng bằng benchmark \\
+NFR04 & Dung lượng & Gói thông điệp (envelope) $\le$ 4 MiB, thời gian lưu topic 6 giờ, dung lượng dành cho dữ liệu gốc 2 GiB \\
+NFR05 & Truy vết & Lần theo nguồn gốc dữ liệu từ API về manifest, Kafka offset và checksum của dữ liệu gốc \\
+NFR06 & Tái lập & Cố định phiên bản bằng \ident{==}, dùng seed tất định và manifest môi trường chạy có checksum \\
+NFR07 & Theo dõi vận hành & Log JSON có cấu trúc, chỉ số Prometheus và \ident{/pipeline/status} \\
+NFR08 & Giới hạn truy vấn & Không dùng \ident{ALLOW FILTERING}; mọi truy vấn đọc có \ident{LIMIT} và phân trang bằng token \\
+NFR09 & An toàn demo & Các cổng chỉ lắng nghe tại \ident{127.0.0.1}; giới hạn nguồn truy cập CORS; không công khai Kafka/Cassandra \\
+NFR10 & Demo ngoại tuyến & Phát lại bản ghi và chạy dữ liệu tổng hợp (synthetic) khi không có kết nối tới MBTA \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Định nghĩa và cách tính các chỉ số}
+\label{sec:metrics}
+
+Phần này trình bày cách tính và điều kiện sử dụng các chỉ số của hệ thống. Các ngưỡng được xác định theo \textbf{chính sách của dự án} (policy) và được lưu cố định trong \ident{run_metadata.policy_json} khi tạo một lần chạy (run). Đây là các quy tắc phục vụ dự án, không phải cam kết mức dịch vụ (SLA) của MBTA.
+
+\subsubsection{Độ mới của vị trí xe}
+
+Gọi $c$ là thời gian theo đồng hồ nghiệp vụ (application clock) tại lúc đánh giá và $t_{obs}$ là thời điểm nguồn đo vị trí xe. Tuổi của quan sát, tức khoảng thời gian đã trôi qua kể từ lần đo, được tính bằng
+\begin{equation}
+a = c - t_{obs}.
+\end{equation}
+Hệ thống dùng ngưỡng dữ liệu cũ (stale) $\theta_v = 120$ giây và cho phép lệch về tương lai tối đa $\epsilon = 5$ giây. Trạng thái vị trí của mỗi xe được xác định như sau:
+\begin{equation}
+\text{class}(a) =
+\begin{cases}
+\text{invalid} & \text{nếu vị trí không hợp lệ, hoặc } a < -\epsilon \ (\texttt{FUTURE\_TIMESTAMP}),\\
+\text{unknown} & \text{nếu } t_{obs} \text{ không có } (a = \text{null}),\\
+\text{fresh} & \text{nếu } -\epsilon \le a \le \theta_v \ (a<0 \text{ được gắn cờ } \texttt{CLOCK\_SKEW} \text{ và hiển thị } 0),\\
+\text{stale} & \text{nếu } a > \theta_v.
+\end{cases}
+\end{equation}
+Timestamp lớn hơn $10^{11}$ được xem là sai đơn vị, gắn mã \texttt{INVALID\_TIMESTAMP\_UNIT} và không được tự động quy đổi. Trạng thái độ mới (freshness) được API tính lại trong mỗi yêu cầu thay vì lưu cố định trong Cassandra. Nhờ đó, khi feed ngừng cập nhật, vị trí xe vẫn chuyển sang stale dù hệ thống không nhận thêm thông điệp. Hàm phân lớp trong \ident{contracts/policy.py} được trình bày dưới đây:
+
+\begin{minted}{python}
+def vehicle_freshness(*, position_valid, observation_time, application_clock, policy):
+    if not position_valid:
+        return FreshnessResult(FreshnessClass.INVALID, None, ())
+    if observation_time is None:
+        return FreshnessResult(FreshnessClass.UNKNOWN, None, ())
+    age = (application_clock - observation_time).total_seconds()
+    if age < -policy.future_tolerance_seconds:
+        return FreshnessResult(FreshnessClass.INVALID, None, ("FUTURE_TIMESTAMP",))
+    if age < 0:
+        return FreshnessResult(FreshnessClass.FRESH, 0.0, ("CLOCK_SKEW",))
+    if age <= policy.vehicle_stale_seconds:
+        return FreshnessResult(FreshnessClass.FRESH, age, ())
+    return FreshnessResult(FreshnessClass.STALE, age, ())
+\end{minted}
+
+Đối với từng feed, ngưỡng stale được tính theo thời gian đã trôi qua kể từ timestamp trong header: 120 giây cho Vehicle Positions, 90 giây cho Trip Updates và 300 giây cho Alerts. Tài liệu GTFS Realtime Best Practices khuyến nghị tuổi dữ liệu tối đa là 90 giây cho VP/TU và 10 phút cho Alerts \cite{gtfs_rt_bp}.
+
+\subsubsection{Chuyển giờ GTFS sang UTC}
+
+GTFS biểu diễn giờ bằng định dạng \texttt{HH:MM:SS}, tính từ mốc của ngày dịch vụ; giá trị \texttt{HH} có thể lớn hơn hoặc bằng 24. Theo chuẩn GTFS, mốc này được xác định bằng cách lấy ``trưa giờ địa phương trừ 12 giờ'' \cite{gtfs_static}. Cách xác định đó áp dụng cả trong ngày đổi giờ mùa hè:
+\begin{align}
+s_{gtfs} &= 3600\cdot HH + 60\cdot MM + SS, \\
+t_{anchor} &= \text{UTC}\big(\text{trưa địa phương của ngày dịch vụ } D\big) - 12\,\text{h}, \\
+t_{sched} &= t_{anchor} + s_{gtfs}.
+\end{align}
+Ví dụ, trong múi giờ \ident{America/New_York}, ngày 2026-03-08 là ngày chuyển sang EDT. Giờ GTFS \texttt{01:30:00} tương ứng với \texttt{2026-03-08T05:30:00Z}. Nếu cộng trực tiếp số giờ vào mốc nửa đêm mà không xét quy tắc trên, kết quả sẽ lệch một giờ. Trên Spark, hệ thống tính \ident{to_utc_timestamp('<date> 12:00:00', tz)} rồi trừ 43\,200 giây, đồng thời bắt buộc đặt \ident{spark.sql.session.timeZone=UTC}.
+
+\subsubsection{Độ trễ dự kiến và phân loại uncertainty}
+
+Với một sự kiện $e$ là đến trạm (arrival) hoặc rời trạm (departure), độ trễ dự kiến chỉ được tính khi đã xác định được lịch của lần ghé trạm tương ứng:
+\begin{equation}
+d_e = t^{pred}_e - t^{sched}_e,
+\end{equation}
+trong công thức này, $t^{sched}_e$ là giờ lịch của \textbf{cùng loại sự kiện} với giờ dự báo. Giá trị $d_e$ âm cho biết xe được dự báo đến hoặc rời sớm hơn lịch. Nếu ngày dịch vụ còn mơ hồ (ambiguous) hoặc chưa xác định được (unresolved), hệ thống đặt $d_e = \text{null}$ và loại sự kiện khỏi KPI. Khi đó, giờ dự báo do nguồn cung cấp vẫn được hiển thị.
+
+Trường \ident{uncertainty} trong dữ liệu xe buýt MBTA có cách diễn giải riêng \cite{mbta_gtfs}. Bộ chuyển đổi \ident{mbta_bus_uncertainty_v1} phân loại giá trị $u$ theo các trường hợp sau:
+\begin{equation}
+\text{uc}(u) =
+\begin{cases}
+\text{unknown\_uncertainty} & u \text{ không có (vẫn eligible, đếm riêng)},\\
+\text{realtime} & 0 \le u < 300,\\
+\text{schedule\_only} & u = 300,\\
+\text{degraded} & u = 301,\\
+\text{invalid} & u < 0 \text{ hoặc } u > 301.
+\end{cases}
+\end{equation}
+
+\subsubsection{KPI độ trễ dự kiến theo tuyến}
+
+KPI được tính theo \textit{trip instance}, tức một \ident{trip_id} trong một ngày dịch vụ, thay vì tính trên từng dự báo. Với mỗi trip instance, chính sách \ident{first_future_resolved_stop_v1} chọn tối đa một sự kiện mục tiêu (\textit{target event}). Cụ thể, hệ thống xét các sự kiện có thời gian sau \ident{metrics_as_of}, đã xác định được trạm và không mang quan hệ \ident{SKIPPED}/\ident{NO_DATA}, rồi chọn sự kiện có \ident{stop_sequence} nhỏ nhất. Tại mỗi lần ghé trạm, giờ đến được ưu tiên; nếu thiếu thì dùng giờ rời.
+
+Sau khi chọn sự kiện mục tiêu, hệ thống chỉ đánh giá tính hợp lệ của sự kiện đó. Nếu chất lượng dự báo không đạt yêu cầu, hệ thống không chuyển sang trạm tiếp theo để thay thế.
+
+Nếu một trip instance không đủ điều kiện tính KPI, hệ thống ghi nhận \textbf{lý do đầu tiên khớp} trong thứ tự cố định sau: \ident{CANCELED_TRIP}, \ident{ADDED_TRIP}, \ident{AMBIGUOUS_SERVICE_DATE}, \ident{UNRESOLVED_TRIP}, \ident{UNRESOLVED_STOP_SEQUENCE}, \ident{NO_TARGET_STOP}, \ident{SCHEDULE_ONLY_PREDICTION}, \ident{DEGRADED_PREDICTION}, \ident{INVALID_PREDICTION}, \ident{NO_SCHEDULED_EVENT}. Gọi $E_r$ là tập trip instance đủ điều kiện (eligible) của tuyến $r$ và $d_i$ là độ trễ tại sự kiện mục tiêu của chuyến $i$. Với ngưỡng trễ $\theta_{late} = 300$ giây, các chỉ số được tính như sau:
+\begin{align}
+L_r &= \{\, i \in E_r : d_i \ge \theta_{late} \,\}, \\
+\text{predicted\_late\_rate}_r &=
+\begin{cases}
+|L_r| \,/\, |E_r| & |E_r| > 0,\\
+\text{null} & |E_r| = 0,
+\end{cases} \\
+\text{mean\_predicted\_delay}_r &= \frac{1}{|E_r|}\sum_{i \in E_r} d_i \quad (\text{null nếu } |E_r| = 0).
+\end{align}
+Khi không có chuyến đủ điều kiện, mẫu số bằng 0 và tỷ lệ nhận giá trị \ident{null}. Giao diện hiển thị ``Chưa có mẫu đủ điều kiện'' thay cho 0\%, để tránh hiểu nhầm rằng tất cả các chuyến đều không trễ. Mỗi KPI được công bố kèm thời điểm \ident{metrics_as_of}, tử số, mẫu số, \ident{excluded_trip_counts} và \ident{policy_version}.
+
+\textbf{Ví dụ với golden fixture trên tuyến synthetic R\_A.} Tại thời điểm 12:00:30Z, hệ thống xét hai chuyến. Với T1, sự kiện mục tiêu là đến S3 (\ident{stop_sequence} 3), có giờ dự báo 12:11:00Z và giờ lịch 12:05:00Z, nên $d = 360$ s. Với T2, sự kiện tại \ident{stop_sequence} 1 lúc 12:00:00Z đã qua. Vì vậy, hệ thống chọn sự kiện đến S3 (\ident{stop_sequence} 2), có giờ dự báo 12:06:00Z và giờ lịch 12:05:00Z, nên $d = 60$ s.
+
+Cả hai chuyến đều đủ điều kiện tính KPI. Khi đó, $|E| = 2$, $|L| = 1$, tỷ lệ trễ dự kiến bằng $0{,}5$ và độ trễ dự kiến trung bình bằng $(360+60)/2 = 210$ s. Dù có nhiều dự báo đến và rời tại các trạm, mỗi chuyến vẫn chỉ đóng góp tối đa 1 vào mẫu số.
+
+\subsubsection{Đối soát số lượng dữ liệu}
+
+Trước khi đánh dấu một generation là READY, hệ thống đối soát số lượng dữ liệu qua các đẳng thức dưới đây. Hai vế của mỗi đẳng thức phải dùng cùng đơn vị đếm:
+\begin{align*}
+\text{selected\_entities} &= \text{fully\_valid} + \text{partially\_valid} + \text{rejected},\\
+\text{valid\_candidate\_observations} &= \text{unique\_observations} + \text{duplicate\_observations},\\
+\text{membership}_{(route)} &= \text{fresh} + \text{stale} + \text{unknown\_age} + \text{invalid\_có\_ID},\\
+\text{candidate\_predictions} &= \text{retained} + \text{rejected} + \text{not\_applicable},\\
+\text{trip\_instances} &= \text{eligible} + \textstyle\sum \text{excluded}.
+\end{align*}
+Một bản ghi có thể mang nhiều cảnh báo, nên tổng số cảnh báo không được dùng làm mẫu số khi tính tỷ lệ lỗi. Danh mục \ident{QUALITY_REASONS} trong \ident{contracts/enums.py} gồm 43 mã lý do. Mỗi mã xác định mức độ nghiêm trọng, cách xử lý mặc định, đơn vị đếm và nhóm tương ứng.

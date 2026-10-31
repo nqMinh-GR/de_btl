@@ -1,0 +1,46 @@
+\section{Kết luận}
+\label{sec:conclusion}
+
+\subsection{Tổng kết}
+
+Báo cáo đã trình bày quá trình xây dựng TransitPulse MBTA, từ thu thập và xử lý đến cung cấp dữ liệu xe buýt MBTA theo thời gian thực bằng Kafka, Spark Structured Streaming và Cassandra. Trọng tâm của đồ án là duy trì kết quả nhất quán khi dữ liệu nguồn có lỗi, sự kiện có thể được nhận nhiều lần và các thành phần không có giao dịch chung. Các kết quả chính gồm:
+
+\begin{itemize}
+    \item \textbf{Cơ chế công bố generation}: dữ liệu của mỗi generation được giữ bất biến, còn các tham số trong manifest được cố định từ lần tạo đầu tiên. Hệ thống kiểm tra số dòng trước khi chuyển sang READY và cập nhật con trỏ bằng compare-and-set theo thứ tự dữ liệu nguồn. Cơ chế này giúp API tránh đọc dữ liệu ghi dở, giữ KPI không tăng do bản ghi trùng và ngăn snapshot cũ thay thế trạng thái mới. Trong lần chạy thực tế, khoảng thời gian từ READY đến khi con trỏ được cập nhật bằng CAS là 13 ms.
+    \item \textbf{Mô hình lưu trữ theo nhu cầu truy vấn}: Cassandra sử dụng 17 bảng, không cần \ident{ALLOW FILTERING} hay counter. Các bảng phục vụ truy vấn được phân vùng theo \ident{snapshot_id} và tự xóa dữ liệu khi hết TTL.
+    \item \textbf{Cách tính chỉ số rõ ràng}: độ mới của dữ liệu được tính lại khi API trả kết quả; giờ GTFS được chuyển đổi có xét ngày đổi giờ mùa hè; mỗi chuyến chỉ đóng góp một sự kiện mục tiêu vào KPI. Tử số và mẫu số được công bố kèm kết quả. Khi mẫu số bằng 0, kết quả KPI nhận giá trị \ident{null} thay vì 0\%.
+    \item \textbf{Kết quả kiểm chứng trên Google Colab}: bước khởi tạo kiểm tra checksum của 5 thành phần tải về; 940 kiểm thử đơn vị, môi trường chạy và Spark đều đạt (PASS). Kiểm thử golden smoke từ đầu đến cuối đạt cả 5 bước, bao gồm dữ liệu trùng, dữ liệu đến muộn và tăng đồng hồ nghiệp vụ. Phiên chạy trực tiếp trên 10 tuyến MBTA cũng cho phép truy vết nhất quán từ API về checksum của dữ liệu gốc.
+    \item \textbf{Khả năng phục hồi khi có lỗi}: cả bốn kịch bản đo phục hồi đều cho kết quả như kỳ vọng, không mất hoặc trùng bản ghi, với thời gian từ 1,0--49,5 s. Các kịch bản gồm dừng đột ngột sau khi ghi một phần dữ liệu, dừng sau CAS, Cassandra ngừng hoạt động và bộ thu thập bị dừng khi outbox còn bản ghi chờ gửi.
+    \item \textbf{Thời gian phản hồi của API}: trong các phép đo, p95 duy trì ở mức 15--25 ms ngay cả khi bộ xử lý bão hòa. Kết quả này gắn với cách đọc dữ liệu theo phân vùng có giới hạn và sử dụng generation bất biến để tách quá trình đọc khỏi quá trình ghi.
+\end{itemize}
+
+\subsection{Hạn chế}
+
+\paragraph{Hạn chế về hiệu năng.} Hạn chế lớn nhất là \textbf{chưa đạt mục tiêu p95 visibility latency $<$ 10 s} trên Colab, tức thời gian chờ để dữ liệu có thể được truy vấn còn cao. Ở cả ba mức tải kiểm thử, bộ xử lý chỉ xử lý được 5--6,7\% lượng bản ghi đầu vào và chưa giải quyết hết dữ liệu tồn đọng. Trong phiên chạy trực tiếp, TU và Alerts cần khoảng 4 phút để có thể được đọc qua API. Dữ liệu VP đã chuyển sang trạng thái cũ (stale) khi micro-batch tiếp theo còn chưa hoàn tất. Kết quả đo cho thấy nút thắt nằm ở chi phí cố định lớn khi Spark tạo kết quả cho từng snapshot, đặc biệt ở nhánh TU; Kafka và Cassandra chưa phải các thành phần giới hạn hiệu năng trong các phép đo này.
+
+\paragraph{Hạn chế về kiểm chứng.}
+\begin{itemize}
+    \item Các kiểm thử tích hợp IT01--IT16 bằng pytest và phép đo hiệu năng khi phát lại dữ liệu MBTA thực tế chưa được thực hiện. Mỗi kịch bản đo hiệu năng mới chạy một lần, và cấu hình Docker Compose cũng chưa được chạy thử.
+    \item Phiên demo và golden smoke sử dụng commit \ident{4d6669e}, trong khi phép đo hiệu năng sử dụng commit \ident{ff49f59}. Tệp \ident{uv.lock} được tạo trên Colab nhưng chưa đưa vào commit, nên phiên bản các thư viện phụ thuộc gián tiếp có thể khác nhau giữa hai lần khởi tạo môi trường.
+    \item Ảnh chụp giao diện React cho thấy thanh trạng thái báo \texttt{UNAVAILABLE} chưa đúng đối với feed không có trong phản hồi đang dùng, đồng thời danh sách cảnh báo xử lý còn lặp nội dung. Khi rà soát mã nguồn, nhóm cũng nhận thấy màn hình trạm có thể giữ dữ liệu ETA cũ nếu người dùng tiếp tục xem cùng một trạm; trường hợp này chưa được tái hiện khi chạy.
+\end{itemize}
+
+\paragraph{Giới hạn trong phạm vi thiết kế.}
+\begin{itemize}
+    \item Hệ thống sử dụng một Kafka broker và một Cassandra node với hệ số sao chép RF1. Cấu hình này chưa đáp ứng tính sẵn sàng cao và không chịu được sự cố mất máy chủ.
+    \item Hệ thống bảo đảm giao nhận at-least-once, kết hợp ghi và công bố dữ liệu theo cách idempotent. Chưa có bảo đảm exactly-once xuyên suốt Kafka, Parquet và Cassandra. Con trỏ điều khiển việc công bố riêng cho từng feed, nên ba feed chưa được cập nhật trong một giao dịch nguyên tử chung.
+    \item Thời hạn lưu dữ liệu TTL được tính theo đồng hồ hệ thống và vẫn tiếp tục khi quá trình phát lại đang tạm dừng.
+    \item ETA được lấy từ MBTA. Dự án chưa có mô hình ETA riêng và chưa đánh giá độ chính xác do thiếu dữ liệu đối chứng. Dữ liệu xe buýt MBTA thường thiếu trường uncertainty; trong phiên chạy trực tiếp trên tuyến 1, cả 16/16 chuyến đủ điều kiện tính KPI đều thiếu trường này.
+    \item Môi trường Colab hoạt động theo phiên, nên máy ảo có thể bị thu hồi và dữ liệu trong thư mục làm việc có thể mất khi máy ảo được đặt lại. Liên kết Cloudflare quick tunnel được truy cập công khai và chưa có xác thực.
+\end{itemize}
+
+\subsection{Hướng phát triển}
+
+\begin{enumerate}
+    \item \textbf{Ưu tiên tăng năng lực xử lý}: gộp các snapshot cùng feed trong một micro-batch để xử lý bằng một lần chạy Spark, qua đó chia sẻ chi phí cố định khoảng 14 s mỗi generation cho nhiều snapshot. Các hướng khác gồm giảm số Spark action trên mỗi snapshot, tách VP và TU thành các truy vấn độc lập để nhánh VP nhẹ hơn không phải chờ nhánh TU, chuẩn bị trước kế hoạch thực thi Spark và đo lại trên máy có nhiều executor.
+    \item \textbf{Bổ sung kết quả kiểm chứng}: đo lại khả năng chịu tải sau khi tối ưu, đo hiệu năng khi phát lại bản ghi MBTA thu trực tiếp trong 2 giờ và chạy IT01--IT16. Mỗi kịch bản cần được lặp nhiều lần, đồng thời đưa \ident{uv.lock} vào commit để cố định phiên bản thư viện.
+    \item \textbf{Rút ngắn thời gian nạp dữ liệu tĩnh}: ghi \ident{stop_times_by_trip} song song, bất đồng bộ với số tác vụ đồng thời có giới hạn, hoặc sử dụng Spark Cassandra Connector. Chỉ nạp các chuyến thuộc phạm vi theo dõi.
+    \item \textbf{Mở rộng hạ tầng}: thử nghiệm Kafka nhiều broker với nhiều partition theo feed, kết hợp Cassandra ba node, RF3 và \ident{LOCAL_QUORUM}. Khả năng đáp ứng tải cần được đo lại trên cấu hình mở rộng.
+    \item \textbf{Đánh giá độ chính xác ETA}: đối chiếu dự báo với thời điểm xe thực tế đến trạm, ước lượng từ chuỗi Vehicle Positions, để xây dựng dữ liệu đối chứng gần đúng.
+    \item \textbf{Cải thiện an toàn và giao diện}: nâng Spark lên 3.5.8, bảo vệ tunnel bằng Cloudflare Access, sửa trạng thái feed và gộp các cảnh báo trùng trên giao diện React. Bổ sung kiểm thử hành vi cho việc làm mới ETA và hiển thị uncertainty.
+\end{enumerate}
